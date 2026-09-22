@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FunNotes · 笔记</title>
+<link rel="stylesheet" href="./shared/style.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+  <!-- 侧边栏：笔记树 -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <button class="icon-btn small" id="backBtn" data-tip="返回工作台" aria-label="返回工作台">←</button>
+      <span class="brand" id="brandName">📓 FunNotes</span>
+      <button class="icon-btn" id="newBtn" data-tip="新建笔记（Ctrl+N）" aria-label="新建笔记">＋</button>
+    </div>
+
+    <div class="search-wrap">
+      <input id="searchInput" class="search" placeholder="搜索标题、正文或标签…">
+    </div>
+
+    <ul class="note-list" id="noteList"></ul>
+
+    <div class="sidebar-footer">
+      <button class="footer-icon-btn" id="nbBtn" data-tip="切换笔记本（不离开页面）" aria-label="切换笔记本">📓</button>
+      <button class="footer-icon-btn" id="settingsBtn" data-tip="设置：AI 配置、标签管理" aria-label="设置">⚙️</button>
+      <button class="footer-icon-btn" id="trashBtn" data-tip="回收站：左键打开，右键查看更多" aria-label="回收站">🗑️</button>
+      <button class="ghost-btn" id="fileBtn" data-tip="文件：导入 / 导出 / 清空数据">📁 文件</button>
+
+      <div class="footer-dropdown" id="nbDropdown" hidden></div>
+
+      <div class="footer-dropdown" id="trashDropdown" hidden>
+        <button data-action="open">打开回收站</button>
+        <div class="dropdown-divider"></div>
+        <button data-action="empty" class="danger">清空回收站</button>
+      </div>
+
+      <div class="footer-dropdown" id="fileDropdown" hidden>
+        <button data-action="export">导出备份</button>
+        <button data-action="import">导入文件（.json / .md）</button>
+        <div class="dropdown-divider"></div>
+        <button data-action="clear" class="danger">清空所有数据</button>
+      </div>
+
+      <input type="file" id="importFile"
+             accept=".json,.md,.markdown,application/json,text/markdown,text/plain" hidden>
+    </div>
+  </aside>
+
+  <!-- 主区域 -->
+  <main class="main">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">📝</div>
+      <p>还没有笔记</p>
+      <p class="muted">点左上角的 ＋ 新建一条</p>
+    </div>
+
+    <div class="editor" id="editor" hidden>
+      <div class="editor-head">
+        <div style="flex:1;min-width:0">
+          <input id="titleInput" class="title-input" placeholder="标题">
+          <div class="breadcrumb" id="breadcrumb"></div>
+        </div>
+        <div class="editor-meta">
+          <span class="save-status" id="saveStatus"></span>
+          <button class="ghost-btn small" id="tagBtn" data-tip="标签：编辑、选择已有标签">标签 ▾</button>
+          <button class="ghost-btn small" id="aiBtn" data-tip="AI 工具（在设置里配置）" hidden>AI ▾</button>
+          <div class="editor-menu" id="aiDropdown" hidden>
+            <button data-action="summary">AI 总结本篇</button>
+            <button data-action="tags">AI 生成标签</button>
+          </div>
+          <button class="ghost-btn small danger" id="deleteBtn">删除</button>
+        </div>
+      </div>
+
+      <div class="tag-panel" id="tagHost" hidden></div>
+
+      <div class="ai-result" id="aiResult" hidden>
+        <div class="ai-result-head">
+          <span id="aiResultTitle">AI 结果</span>
+          <div style="display:flex;gap:6px">
+            <button class="ghost-btn small" id="aiInsertBtn">插入正文</button>
+            <button class="ghost-btn small" id="aiDiscardBtn">丢弃</button>
+          </div>
+        </div>
+        <div class="ai-result-body" id="aiResultBody"></div>
+      </div>
+
+      <div id="contentInput" class="content-input" contenteditable="true"
+           data-placeholder="开始写点什么…  右键唤出格式工具栏"></div>
+    </div>
+
+    <!-- 回收站视图（组件渲染） -->
+    <div class="trash-view" id="trashView" hidden></div>
+    <!-- 设置视图（组件渲染） -->
+    <div class="settings-view" id="settingsView" hidden></div>
+  </main>
+</div>
+
+<!-- 浮动格式工具栏 -->
+<div class="fmt-toolbar" id="fmtToolbar" hidden>
+  <button data-cmd="bold" data-tip="加粗（Ctrl+B）"><b>B</b></button>
+  <button data-cmd="italic" data-tip="斜体（Ctrl+I）"><i>I</i></button>
+  <button data-cmd="underline" data-tip="下划线（Ctrl+U）"><u>U</u></button>
+  <button data-cmd="strikeThrough" data-tip="删除线"><s>S</s></button>
+  <span class="tb-sep"></span>
+  <button data-block="h1" data-tip="一级标题">H1</button>
+  <button data-block="h2" data-tip="二级标题">H2</button>
+  <button data-block="h3" data-tip="三级标题">H3</button>
+  <button data-block="p" class="tb-wide" data-tip="正文：取消标题，变回普通段落">正文</button>
+  <span class="tb-sep"></span>
+  <button data-cmd="insertUnorderedList" data-tip="无序列表">•</button>
+  <button data-cmd="insertOrderedList" data-tip="有序列表">1.</button>
+  <button data-block="blockquote" data-tip="引用">❝</button>
+  <button data-block="pre" data-tip="代码块">⟨⟩</button>
+  <span class="tb-sep"></span>
+  <button data-action="link" data-tip="插入链接">🔗</button>
+  <button data-action="table" data-tip="插入表格">⊞</button>
+  <span class="tb-sep"></span>
+  <button data-action="clear" data-tip="清除格式：取消加粗、标题等">⌫</button>
+</div>
+
+<script type="module">
+import {
+  $, MAX_DEPTH, LS_CURRENT_NB, genId, escapeHtml, isLikelyHtml, sanitizeHtml,
+  formatTime, parseTags, buildIndexes, getDepth, getSubtreeHeight,
+  isDescendantOf, readStore, writeStore, readAiSettings,
+  setNotice, queryParam,
+} from './shared/utils.js';
+import {
+  state, loadAll, getNotebook, sortedNotebooks, notesInNotebook, mostRecentNoteId,
+  saveNote, createNotebook, exportBackup, importBackup, importMarkdown,
+  resetAll,
+} from './shared/db.js';
+import * as ui from './shared/ui.js';
+import { createSettingsView, createTagPanel, onTagsChanged } from './shared/settings.js';
+import { createTrashView, softDeleteNote, emptyTrash } from './shared/trash.js';
+
+ui.initUi();
+
+/* =========================================================
+   元素
+   ========================================================= */
+const els = {
+  backBtn: $('#backBtn'),
+  brandName: $('#brandName'),
+  newBtn: $('#newBtn'),
+  searchInput: $('#searchInput'),
+  noteList: $('#noteList'),
+
+  nbBtn: $('#nbBtn'),
+  nbDropdown: $('#nbDropdown'),
+  settingsBtn: $('#settingsBtn'),
+  trashBtn: $('#trashBtn'),
+  trashDropdown: $('#trashDropdown'),
+  fileBtn: $('#fileBtn'),
+  fileDropdown: $('#fileDropdown'),
+  importFile: $('#importFile'),
+
+  emptyState: $('#emptyState'),
+  editor: $('#editor'),
+  titleInput: $('#titleInput'),
+  breadcrumb: $('#breadcrumb'),
+  saveStatus: $('#saveStatus'),
+  tagBtn: $('#tagBtn'),
+  tagHost: $('#tagHost'),
+  aiBtn: $('#aiBtn'),
+  aiDropdown: $('#aiDropdown'),
+  deleteBtn: $('#deleteBtn'),
+
+  aiResult: $('#aiResult'),
+  aiResultTitle: $('#aiResultTitle'),
+  aiResultBody: $('#aiResultBody'),
+  aiInsertBtn: $('#aiInsertBtn'),
+  aiDiscardBtn: $('#aiDiscardBtn'),
+
+  contentInput: $('#contentInput'),
+  fmtToolbar: $('#fmtToolbar'),
+
+  trashView: $('#trashView'),
+  settingsView: $('#settingsView'),
+};
+
+/* =========================================================
+   状态
+   ========================================================= */
+let currentNotebookId = null;
+let currentId = null;
+let currentView = 'notes';   // 'notes' | 'trash' | 'settings'
+let lastSelectedId = null;
+let saveTimer = null;
+let aiResultMode = null;
+let tagPanel = null;
+let trashView = null;
+let settingsView = null;
+const collapsedIds = new Set();
+let dragState = null;
+let dropTarget = null;
+
+/* =========================================================
+   启动
+   ========================================================= */
+async function boot() {
+  await loadAll();
+
+  const nbParam = queryParam('nb');
+  if (nbParam && !getNotebook(nbParam)) {
+    // 无效 nb → 跳回工作台 + Toast
+    setNotice('找不到该笔记本，已返回工作台');
+    location.replace('./index.html');
+    return;
+  }
+
+  const saved = readStore(LS_CURRENT_NB, '');
+  currentNotebookId = nbParam && getNotebook(nbParam)
+    ? nbParam
+    : (getNotebook(saved) ? saved : sortedNotebooks()[0].id);
+
+  writeStore(LS_CURRENT_NB, currentNotebookId);
+  syncUrl();
+
+  initComponents();
+  bindEvents();
+  updateBrand();
+
+  renderList();
+  selectDefaultNote();
+  updateAIBtn();
+}
+
+boot().catch((err) => {
+  console.error(err);
+  ui.toast('页面初始化失败：' + err.message);
+});
+
+/* =========================================================
+   组件挂载
+   ========================================================= */
+function initComponents() {
+  tagPanel = createTagPanel(els.tagHost, {
+    getValue: () => {
+      const note = state.notes.find((n) => n.id === currentId);
+      return ((note && note.tags) || []).join(', ');
+    },
+    onInput: () => scheduleSave(),
+  });
+  tagPanel.close();
+
+  trashView = createTrashView({
+    root: els.trashView,
+    onChange: () => {
+      renderTrash();
+      renderList();
+    },
+    onClose: () => showNotesView(),
+  });
+
+  settingsView = createSettingsView({
+    root: els.settingsView,
+    onClose: () => showNotesView(),
+    onChanged: () => renderList(),
+    onAiChanged: () => updateAIBtn(),
+  });
+
+  // 标签被改名 / 删除后，笔记树（标签搜索）与当前编辑器同步刷新
+  onTagsChanged(() => {
+    renderList();
+    const note = state.notes.find((n) => n.id === currentId);
+    if (note) tagPanel.setValue((note.tags || []).join(', '));
+  });
+}
+
+function updateAIBtn() {
+  const ai = readAiSettings();
+  els.aiBtn.hidden = !ai.key;
+  if (!ai.key) els.aiDropdown.hidden = true;
+}
+
+function syncTagBtn() {
+  els.tagBtn.textContent = tagPanel && tagPanel.isOpen() ? '标签 ▴' : '标签 ▾';
+}
+
+function closeTagPanel() {
+  if (!tagPanel) return;
+  tagPanel.close();
+  syncTagBtn();
+}
+
+function updateBrand() {
+  const nb = getNotebook(currentNotebookId);
+  els.brandName.textContent = '📓 ' + (nb ? nb.name : 'FunNotes');
+  els.brandName.dataset.tip = nb ? `当前笔记本：${nb.name}` : '';
+  document.title = (nb ? nb.name + ' · ' : '') + 'FunNotes';
+}
+
+/* =========================================================
+   当前笔记本 / URL
+   ========================================================= */
+function syncUrl() {
+  const url = location.pathname + '?nb=' + encodeURIComponent(currentNotebookId);
+  history.replaceState(null, '', url);
+}
+
+async function switchNotebook(id, { silent } = {}) {
+  if (!getNotebook(id) || id === currentNotebookId) return;
+
+  await flushSave();            // 切换前必须等保存完成
+
+  currentNotebookId = id;
+  writeStore(LS_CURRENT_NB, id);
+  syncUrl();
+
+  currentId = null;
+  lastSelectedId = null;
+  collapsedIds.clear();
+  els.searchInput.value = '';
+  updateBrand();
+
+  if (currentView === 'trash') {
+    renderTrash();
+  } else if (currentView === 'notes') {
+    selectDefaultNote();
+  }
+  renderList();
+
+  if (!silent) ui.toast(`已切换到「${getNotebook(id).name}」`);
+}
+
+async function createNotebookFlow() {
+  const name = await ui.promptModal('新建笔记本', '新笔记本', {
+    label: '笔记本名称',
+    confirmText: '创建',
+  });
+  if (name === null) return;
+  if (!name) { ui.toast('名称不能为空'); return; }
+
+  const nb = await createNotebook(name);
+  await switchNotebook(nb.id, { silent: true });
+  ui.toast(`已创建并切换到「${nb.name}」`);
+}
+
+async function goWorkbench() {
+  await flushSave();            // 跳转前必须等保存完成
+  location.href = './index.html';
+}
+
+/* =========================================================
+   页脚下拉菜单
+   ========================================================= */
+function renderNotebookDropdown() {
+  const dd = els.nbDropdown;
+  dd.innerHTML = '';
+
+  sortedNotebooks().forEach((nb) => {
+    const btn = document.createElement('button');
+    btn.textContent = (nb.id === currentNotebookId ? '✓ ' : '　') + nb.name;
+    btn.addEventListener('click', () => {
+      dd.hidden = true;
+      switchNotebook(nb.id);
+    });
+    dd.appendChild(btn);
+  });
+
+  const divider = document.createElement('div');
+  divider.className = 'dropdown-divider';
+  dd.appendChild(divider);
+
+  const newBtn = document.createElement('button');
+  newBtn.textContent = '＋ 新建笔记本…';
+  newBtn.addEventListener('click', () => {
+    dd.hidden = true;
+    createNotebookFlow();
+  });
+  dd.appendChild(newBtn);
+
+  const wsBtn = document.createElement('button');
+  wsBtn.textContent = '打开工作台';
+  wsBtn.addEventListener('click', () => {
+    dd.hidden = true;
+    goWorkbench();
+  });
+  dd.appendChild(wsBtn);
+}
+
+/* =========================================================
+   笔记列表 / 笔记树
+   ========================================================= */
+function renderList() {
+  const q = els.searchInput.value.trim().toLowerCase();
+
+  if (!currentNotebookId) {
+    els.noteList.innerHTML = '<li class="note-list-empty">没有笔记本</li>';
+    return;
+  }
+
+  const inNotebook = notesInNotebook(currentNotebookId);
+
+  if (q) {
+    const matched = inNotebook.filter((n) => {
+      const inTitle = (n.title || '').toLowerCase().includes(q);
+      const inBody = (n.content || '').toLowerCase().includes(q);
+      const inTags = (n.tags || []).some((t) => String(t).toLowerCase().includes(q));
+      return inTitle || inBody || inTags;
+    });
+
+    els.noteList.innerHTML = '';
+    if (!matched.length) {
+      els.noteList.innerHTML = '<li class="note-list-empty">没有匹配的笔记</li>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    matched.forEach((n) => frag.appendChild(buildFlatItem(n, 0)));
+    els.noteList.appendChild(frag);
+    return;
+  }
+
+  const { byParent, byId } = buildIndexes(state.notes);
+  const inNbSet = new Set(inNotebook.map((n) => n.id));
+
+  const root = inNotebook.filter((n) => {
+    if (!n.parentId) return true;
+    if (!byId.has(n.parentId)) return true;
+    if (!inNbSet.has(n.parentId)) return true;
+    return false;
+  });
+  root.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  els.noteList.innerHTML = '';
+  if (!root.length) {
+    els.noteList.innerHTML = '<li class="note-list-empty">还没有笔记</li>';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  root.forEach((n) => renderTreeNode(n, 0, frag, byParent, inNbSet));
+  els.noteList.appendChild(frag);
+}
+
+function buildFlatItem(note, depth) {
+  const li = document.createElement('li');
+  li.className = 'note-item' + (note.id === currentId ? ' active' : '');
+  li.dataset.id = note.id;
+  li.style.paddingLeft = (10 + depth * 14) + 'px';
+
+  const row = document.createElement('div');
+  row.className = 'ni-row';
+
+  const arrow = document.createElement('span');
+  arrow.className = 'ni-arrow';
+
+  const title = document.createElement('span');
+  title.className = 'ni-title';
+  title.textContent = note.title || '无标题';
+
+  row.append(arrow, title);
+  li.appendChild(row);
+
+  li.addEventListener('click', () => selectNote(note.id));
+  bindNoteContextMenu(li, note);
+  return li;
+}
+
+function renderTreeNode(note, depth, container, byParent, inNbSet) {
+  const children = (byParent.get(note.id) || []).filter((n) => inNbSet.has(n.id));
+  const hasChildren = children.length > 0;
+  const collapsed = collapsedIds.has(note.id);
+
+  const li = document.createElement('li');
+  li.className = 'note-item' + (note.id === currentId ? ' active' : '');
+  if (hasChildren) li.classList.add('has-children');
+  li.dataset.id = note.id;
+  li.draggable = true;
+  li.style.paddingLeft = (10 + depth * 14) + 'px';
+
+  const row = document.createElement('div');
+  row.className = 'ni-row';
+
+  const arrow = document.createElement('span');
+  arrow.className = 'ni-arrow' + (hasChildren ? ' has-children' : '');
+  if (hasChildren) {
+    arrow.textContent = collapsed ? '▸' : '▾';
+    arrow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCollapse(note.id);
+    });
+  }
+
+  const title = document.createElement('span');
+  title.className = 'ni-title';
+  title.textContent = note.title || '无标题';
+
+  row.append(arrow, title);
+  li.appendChild(row);
+
+  li.addEventListener('click', () => selectNote(note.id));
+  bindNoteContextMenu(li, note);
+
+  li.addEventListener('dragstart', (e) => {
+    dragState = { id: note.id };
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', note.id); } catch (_) {}
+    li.classList.add('dragging');
+  });
+
+  li.addEventListener('dragend', () => {
+    dragState = null;
+    dropTarget = null;
+    li.classList.remove('dragging');
+    clearDropIndicators();
+    els.trashBtn.classList.remove('drag-over');
+  });
+
+  li.addEventListener('dragover', (e) => {
+    if (!dragState) return;
+    if (dragState.id === note.id) return;
+
+    const { byId } = buildIndexes(state.notes);
+    if (isDescendantOf(note.id, dragState.id, byId)) return;
+
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const rect = li.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const h = rect.height;
+
+    let position;
+    if (y < h * 0.25) position = 'before';
+    else if (y > h * 0.75) position = 'after';
+    else position = 'inside';
+
+    if (!canDrop(dragState.id, note.id, position)) return;
+
+    clearDropIndicators();
+    li.classList.add('drop-' + position);
+    dropTarget = { id: note.id, position };
+  });
+
+  li.addEventListener('dragleave', (e) => {
+    if (!li.contains(e.relatedTarget)) {
+      li.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    }
+  });
+
+  li.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    if (!dragState || !dropTarget) return;
+    const draggedId = dragState.id;
+    const { id: targetId, position } = dropTarget;
+    dragState = null;
+    dropTarget = null;
+    clearDropIndicators();
+    await moveNote(draggedId, targetId, position);
+  });
+
+  container.appendChild(li);
+
+  if (hasChildren && !collapsed) {
+    children.forEach((c) => renderTreeNode(c, depth + 1, container, byParent, inNbSet));
+  }
+}
+
+function clearDropIndicators() {
+  els.noteList.querySelectorAll('.drop-before, .drop-after, .drop-inside')
+    .forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-inside'));
+}
+
+function toggleCollapse(id) {
+  if (collapsedIds.has(id)) collapsedIds.delete(id);
+  else collapsedIds.add(id);
+  renderList();
+}
+
+/* ── 右键菜单 ───────────────────────────────── */
+
+function bindNoteContextMenu(li, note) {
+  li.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openNoteMenu(note.id, e.clientX, e.clientY);
+  });
+}
+
+function openNoteMenu(id, x, y) {
+  const note = state.notes.find((n) => n.id === id && !n.deletedAt);
+  if (!note) return;
+
+  const childCount = state.notes.filter((n) => n.parentId === id && !n.deletedAt).length;
+  ui.openCtxMenu(x, y, [
+    { heading: (note.title || '无标题') + (childCount ? `（${childCount} 条子笔记）` : '') },
+    { label: '新建子笔记', action: () => createNote(id) },
+    { label: '重命名笔记…', action: () => renameNote(id) },
+    { separator: true },
+    { label: '删除笔记（移入回收站）', danger: true, action: () => deleteNoteById(id) },
+  ]);
+}
+
+/* =========================================================
+   拖拽移动
+   ========================================================= */
+function canDrop(draggedId, targetId, position) {
+  const { byId, byParent } = buildIndexes(state.notes);
+  const target = byId.get(targetId);
+  if (!target) return false;
+
+  const draggedHeight = getSubtreeHeight(draggedId, byParent);
+  let newDepth;
+
+  if (position === 'inside') {
+    newDepth = getDepth(targetId, byId) + 1;
+  } else {
+    const parent = target.parentId;
+    newDepth = parent ? getDepth(parent, byId) + 1 : 0;
+  }
+
+  return newDepth + draggedHeight <= MAX_DEPTH;
+}
+
+async function moveNote(draggedId, targetId, position) {
+  const dragged = state.notes.find((n) => n.id === draggedId);
+  const target = state.notes.find((n) => n.id === targetId);
+  if (!dragged || !target) return;
+  if (dragged.id === target.id) return;
+
+  const { byId } = buildIndexes(state.notes);
+  if (isDescendantOf(targetId, draggedId, byId)) return;
+
+  let newParentId;
+  let newOrder;
+
+  if (position === 'inside') {
+    newParentId = targetId;
+    const siblings = state.notes
+      .filter((n) => n.parentId === targetId && n.id !== draggedId && !n.deletedAt)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    newOrder = siblings.length ? (siblings[siblings.length - 1].order ?? 0) + 1 : 0;
+  } else {
+    newParentId = target.parentId || null;
+    const siblings = state.notes
+      .filter((n) => n.parentId === newParentId && n.id !== draggedId && !n.deletedAt)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const idx = siblings.findIndex((n) => n.id === targetId);
+
+    if (idx < 0) {
+      newOrder = siblings.length ? (siblings[siblings.length - 1].order ?? 0) + 1 : 0;
+    } else if (position === 'before') {
+      const prev = siblings[idx - 1];
+      const curr = siblings[idx];
+      newOrder = prev
+        ? ((prev.order ?? 0) + (curr.order ?? 0)) / 2
+        : (curr.order ?? 0) - 1;
+    } else {
+      const curr = siblings[idx];
+      const next = siblings[idx + 1];
+      newOrder = next
+        ? ((curr.order ?? 0) + (next.order ?? 0)) / 2
+        : (curr.order ?? 0) + 1;
+    }
+  }
+
+  dragged.parentId = newParentId;
+  dragged.order = newOrder;
+  dragged.updatedAt = Date.now();
+  await saveNote(dragged);
+
+  if (newParentId && collapsedIds.has(newParentId)) collapsedIds.delete(newParentId);
+  renderList();
+}
+
+/* =========================================================
+   保存
+   ========================================================= */
+function scheduleSave() {
+  if (!currentId) return;
+  els.saveStatus.textContent = '编辑中…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveNow();
+  }, 600);
+}
+
+async function saveNow() {
+  if (!currentId) return;
+  const id = currentId;
+  const note = state.notes.find((n) => n.id === id);
+  if (!note || note.deletedAt) return;
+
+  note.title = els.titleInput.value;
+  note.content = els.contentInput.innerHTML;
+  note.tags = parseTags(tagPanel.value);
+  note.updatedAt = Date.now();
+
+  try {
+    await saveNote(note);
+  } catch (err) {
+    console.error('保存失败', err);
+    els.saveStatus.textContent = '保存失败';
+    return;
+  }
+
+  renderList();
+  if (currentId === id) renderSaveStatus(note.updatedAt);
+}
+
+/** 立即把待保存内容写库，并等待完成（跳转 / 切换笔记本前必须 await） */
+async function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await saveNow();
+}
+
+function renderSaveStatus(ts) {
+  els.saveStatus.textContent = ts ? '已保存 ' + formatTime(ts) : '';
+}
+
+/* =========================================================
+   视图切换
+   ========================================================= */
+function hideMainViews() {
+  els.emptyState.hidden = true;
+  els.editor.hidden = true;
+  els.trashView.hidden = true;
+  els.settingsView.hidden = true;
+  els.trashBtn.classList.remove('active');
+  els.settingsBtn.classList.remove('active');
+}
+
+function showEmpty() {
+  currentId = null;
+  currentView = 'notes';
+  hideMainViews();
+  els.emptyState.hidden = false;
+  els.breadcrumb.innerHTML = '';
+  hideFmtToolbar();
+  closeTagPanel();
+}
+
+function showTrashView() {
+  lastSelectedId = currentId || lastSelectedId;
+  currentId = null;
+  currentView = 'trash';
+  hideMainViews();
+  els.trashView.hidden = false;
+  els.trashBtn.classList.add('active');
+  hideFmtToolbar();
+  closeTagPanel();
+  renderTrash();
+}
+
+function showSettingsView() {
+  lastSelectedId = currentId || lastSelectedId;
+  currentId = null;
+  currentView = 'settings';
+  hideMainViews();
+  els.settingsView.hidden = false;
+  els.settingsBtn.classList.add('active');
+  hideFmtToolbar();
+  closeTagPanel();
+  settingsView.render();
+}
+
+function showNotesView() {
+  currentView = 'notes';
+  els.trashView.hidden = true;
+  els.settingsView.hidden = true;
+  els.trashBtn.classList.remove('active');
+  els.settingsBtn.classList.remove('active');
+
+  if (lastSelectedId) {
+    const note = state.notes.find((n) => n.id === lastSelectedId && !n.deletedAt);
+    if (note) { selectNote(lastSelectedId); return; }
+  }
+  selectDefaultNote();
+}
+
+function renderTrash() {
+  trashView.render(currentNotebookId);
+}
+
+/** 默认笔记：最近编辑（updatedAt 最大）且未删除；没有则空状态 */
+function selectDefaultNote() {
+  const id = mostRecentNoteId(currentNotebookId);
+  if (id) selectNote(id);
+  else showEmpty();
+}
+
+/* =========================================================
+   笔记操作
+   ========================================================= */
+function renderBreadcrumb(note) {
+  const { byId } = buildIndexes(state.notes);
+  const path = [];
+  let cur = note;
+  let guard = 0;
+  while (cur && guard++ < 100) {
+    path.unshift(cur);
+    cur = cur.parentId ? byId.get(cur.parentId) : null;
+  }
+  els.breadcrumb.innerHTML = '';
+  path.forEach((n, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '›';
+      els.breadcrumb.appendChild(sep);
+    }
+    const s = document.createElement('span');
+    s.textContent = n.title || '无标题';
+    els.breadcrumb.appendChild(s);
+  });
+}
+
+function setEditorContent(content) {
+  const c = content || '';
+  if (!c) {
+    els.contentInput.innerHTML = '';
+    return;
+  }
+  if (isLikelyHtml(c)) {
+    els.contentInput.innerHTML = sanitizeHtml(c);
+  } else {
+    els.contentInput.innerHTML = c
+      .split(/\n{2,}/)
+      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+      .join('');
+  }
+}
+
+function selectNote(id) {
+  flushSave();
+
+  const note = state.notes.find((n) => n.id === id);
+  if (!note || note.deletedAt) { showEmpty(); return; }
+
+  if (note.notebookId !== currentNotebookId) {
+    currentNotebookId = note.notebookId;
+    writeStore(LS_CURRENT_NB, currentNotebookId);
+    syncUrl();
+    updateBrand();
+  }
+
+  // 展开祖先
+  let cur = note.parentId ? state.notes.find((n) => n.id === note.parentId) : null;
+  let guard = 0;
+  while (cur && guard++ < 100) {
+    collapsedIds.delete(cur.id);
+    cur = cur.parentId ? state.notes.find((n) => n.id === cur.parentId) : null;
+  }
+
+  currentView = 'notes';
+  hideMainViews();
+
+  currentId = id;
+  lastSelectedId = id;
+  els.emptyState.hidden = true;
+  els.editor.hidden = false;
+
+  els.titleInput.value = note.title || '';
+  setEditorContent(note.content || '');
+  tagPanel.setValue((note.tags || []).join(', '));
+
+  renderBreadcrumb(note);
+  renderSaveStatus(note.updatedAt);
+  hideAIResult();
+  hideFmtToolbar();
+  closeTagPanel();
+  renderList();
+}
+
+async function createNote(parentId) {
+  await flushSave();
+
+  if (!currentNotebookId) {
+    ui.toast('请先创建一个笔记本');
+    return;
+  }
+
+  let parent = parentId ? state.notes.find((n) => n.id === parentId && !n.deletedAt) : null;
+  if (!parent) parentId = null;
+
+  if (parent) {
+    const { byId } = buildIndexes(state.notes);
+    if (getDepth(parent.id, byId) + 1 > MAX_DEPTH) {
+      ui.toast(`最多 ${MAX_DEPTH + 1} 层，无法再添加子笔记`);
+      return;
+    }
+  }
+
+  const siblings = state.notes.filter(
+    (n) => n.notebookId === currentNotebookId &&
+           (n.parentId || null) === (parentId || null) &&
+           !n.deletedAt
+  );
+  const maxOrder = siblings.length
+    ? Math.max(...siblings.map((n) => n.order ?? 0))
+    : -1;
+
+  const note = {
+    id: genId(),
+    notebookId: currentNotebookId,
+    parentId: parentId || null,
+    order: maxOrder + 1,
+    title: '',
+    content: '',
+    tags: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  state.notes.push(note);
+  await saveNote(note);
+
+  if (parentId) collapsedIds.delete(parentId);
+  currentView = 'notes';
+  els.trashView.hidden = true;
+  els.settingsView.hidden = true;
+  renderList();
+  selectNote(note.id);
+  els.titleInput.focus();
+}
+
+async function renameNote(id) {
+  const note = state.notes.find((n) => n.id === id && !n.deletedAt);
+  if (!note) return;
+
+  if (currentId === id) await flushSave();
+
+  const name = await ui.promptModal('重命名笔记', note.title || '', {
+    label: '笔记标题',
+    confirmText: '重命名',
+  });
+  if (name === null) return;
+  if (!name) { ui.toast('标题不能为空'); return; }
+
+  note.title = name;
+  note.updatedAt = Date.now();
+  await saveNote(note);
+
+  if (currentId === id) {
+    els.titleInput.value = name;
+    renderBreadcrumb(note);
+    renderSaveStatus(note.updatedAt);
+  }
+  renderList();
+  ui.toast(`已重命名为「${name}」`);
+}
+
+async function deleteNoteById(id) {
+  await softDeleteNote(id, () => {
+    if (currentId && !state.notes.some((n) => n.id === currentId && !n.deletedAt)) {
+      showEmpty();
+    }
+    renderList();
+    if (currentView === 'trash') renderTrash();
+  });
+}
+
+/* =========================================================
+   文件：导出 / 导入 / 清空
+   ========================================================= */
+async function clearAllData() {
+  const first = await ui.confirmModal(
+    '清空所有数据',
+    '将删除所有笔记本、笔记（含回收站）和 AI 配置。此操作不可恢复，建议先导出备份。',
+    { confirmText: '继续', danger: true }
+  );
+  if (!first) return;
+
+  const second = await ui.confirmModal('再次确认', '真的要清空全部数据吗？',
+    { confirmText: '清空', danger: true });
+  if (!second) return;
+
+  await flushSave();
+
+  try {
+    const nb = await resetAll();
+    currentNotebookId = nb.id;
+    writeStore(LS_CURRENT_NB, nb.id);
+    syncUrl();
+    updateBrand();
+
+    currentId = null;
+    lastSelectedId = null;
+    collapsedIds.clear();
+    els.searchInput.value = '';
+    els.titleInput.value = '';
+    els.contentInput.innerHTML = '';
+    tagPanel.setValue('');
+    els.saveStatus.textContent = '';
+
+    renderNotebookDropdown();
+    settingsView.render();
+    updateAIBtn();
+    showEmpty();
+    renderList();
+    ui.hideToast();
+    ui.toast('已清空所有数据');
+  } catch (err) {
+    console.error('清空失败', err);
+    ui.toast('清空失败：' + err.message);
+  }
+}
+
+/* =========================================================
+   富文本格式工具栏
+   ========================================================= */
+let savedRange = null;
+
+function showFmtToolbar(x, y) {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0 && els.contentInput.contains(sel.anchorNode)) {
+    savedRange = sel.getRangeAt(0).cloneRange();
+  }
+
+  const tb = els.fmtToolbar;
+  tb.style.left = '0px';
+  tb.style.top = '0px';
+  tb.hidden = false;
+
+  const rect = tb.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 8;
+  const maxY = window.innerHeight - rect.height - 8;
+  tb.style.left = Math.max(8, Math.min(x, maxX)) + 'px';
+  tb.style.top = Math.max(8, Math.min(y, maxY)) + 'px';
+
+  updateToolbarState();
+}
+
+function hideFmtToolbar() {
+  els.fmtToolbar.hidden = true;
+}
+
+function updateToolbarState() {
+  if (els.fmtToolbar.hidden) return;
+  els.fmtToolbar.querySelectorAll('button').forEach((btn) => {
+    const { cmd, block } = btn.dataset;
+    let active = false;
+    try {
+      if (cmd === 'bold' || cmd === 'italic' || cmd === 'underline' ||
+          cmd === 'strikeThrough' || cmd === 'insertUnorderedList' ||
+          cmd === 'insertOrderedList') {
+        active = document.queryCommandState(cmd);
+      } else if (block) {
+        const v = String(document.queryCommandValue('formatBlock') || '').toLowerCase();
+        active = block === 'p' ? (!v || v === 'p' || v === 'div' || v === 'body') : v === block;
+      }
+    } catch (_) {
+      active = false;
+    }
+    btn.classList.toggle('active', active);
+  });
+}
+
+function restoreSelection() {
+  if (!savedRange) return;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(savedRange);
+}
+
+function execFmt(cmd, value) {
+  els.contentInput.focus();
+  restoreSelection();
+  try {
+    document.execCommand(cmd, false, value);
+  } catch (e) {
+    console.warn('execCommand 失败', cmd, e);
+  }
+  scheduleSave();
+}
+
+async function insertLink() {
+  const url = await ui.promptModal('插入链接', 'https://', {
+    label: '链接地址',
+    confirmText: '插入',
+  });
+  if (!url) return;
+  execFmt('createLink', url.trim());
+}
+
+async function insertTable() {
+  const values = await ui.openModal({
+    title: '插入表格',
+    message: '输入表格的行数与列数（行数 1–20，列数 1–10）。',
+    fields: [
+      { label: '行数', value: '3' },
+      { label: '列数', value: '3' },
+    ],
+    confirmText: '插入',
+  });
+  if (!values) return;
+
+  const r = Math.max(1, Math.min(20, parseInt(values[0], 10) || 3));
+  const c = Math.max(1, Math.min(10, parseInt(values[1], 10) || 3));
+
+  let html = '<table><tbody>';
+  for (let i = 0; i < r; i++) {
+    html += '<tr>';
+    for (let j = 0; j < c; j++) {
+      html += i === 0 ? '<th>表头</th>' : '<td>内容</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table><p><br></p>';
+
+  execFmt('insertHTML', html);
+}
+
+/* =========================================================
+   AI
+   ========================================================= */
+function setAILoading(which) {
+  const busy = !!which;
+  els.aiBtn.disabled = busy;
+  els.aiBtn.textContent = busy ? 'AI 处理中…' : 'AI ▾';
+  if (busy) els.aiDropdown.hidden = true;
+}
+
+async function callAI(messages) {
+  const ai = readAiSettings();
+  const base = (ai.base || 'https://api.deepseek.com/v1').replace(/\/+$/, '');
+  const model = ai.model || 'deepseek-chat';
+  if (!ai.key) throw new Error('请先在「设置」里填入 API Key');
+
+  const res = await fetch(base + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + ai.key,
+    },
+    body: JSON.stringify({ model, messages, temperature: 0.3 }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`请求失败（${res.status}）${text.slice(0, 160)}`);
+  }
+
+  const data = await res.json();
+  return (data && data.choices && data.choices[0] &&
+          data.choices[0].message && data.choices[0].message.content || '').trim();
+}
+
+function showAIResult(title, body, mode) {
+  els.aiResultTitle.textContent = title;
+  els.aiResultBody.textContent = body;
+  els.aiInsertBtn.hidden = mode !== 'append';
+  aiResultMode = mode;
+  els.aiResult.hidden = false;
+}
+
+function hideAIResult() {
+  els.aiResult.hidden = true;
+  aiResultMode = null;
+}
+
+function getEditorPlainText() {
+  return (els.contentInput.innerText || els.contentInput.textContent || '').trim();
+}
+
+function insertAIResult() {
+  if (aiResultMode !== 'append') return;
+  const text = els.aiResultBody.textContent.trim();
+  if (!text) return;
+
+  const html = '<p>--- AI 总结 ---</p><pre>' + escapeHtml(text) + '</pre>';
+
+  els.contentInput.focus();
+  const sel = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(els.contentInput);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  document.execCommand('insertHTML', false, html);
+  scheduleSave();
+  hideAIResult();
+}
+
+async function runAISummary() {
+  const content = getEditorPlainText();
+  if (!content) { ui.toast('笔记还是空的，先写点内容'); return; }
+
+  setAILoading('summary');
+  hideAIResult();
+
+  try {
+    const result = await callAI([
+      { role: 'system', content: '你是一个笔记助手。请用中文简洁总结用户的笔记，输出 3-5 条要点，每条以短横线开头，不要寒暄。' },
+      { role: 'user', content },
+    ]);
+    showAIResult('AI 总结', result || '（模型返回了空内容）', 'append');
+  } catch (err) {
+    showAIResult('出错了', err.message, null);
+  } finally {
+    setAILoading(null);
+  }
+}
+
+async function runAITags() {
+  const content = getEditorPlainText();
+  if (!content) { ui.toast('笔记还是空的，先写点内容'); return; }
+
+  setAILoading('tags');
+
+  try {
+    const result = await callAI([
+      { role: 'system', content: '阅读用户的笔记，给出 3-5 个中文标签。只输出标签本身，用英文逗号分隔，不要编号、不要解释、不要句号。' },
+      { role: 'user', content },
+    ]);
+
+    const fresh = result.split(/[,，\n]/)
+      .map((s) => s.trim().replace(/^#/, ''))
+      .filter(Boolean);
+
+    if (!fresh.length) throw new Error('模型没有返回可用标签');
+
+    const merged = [...new Set([...parseTags(tagPanel.value), ...fresh])];
+    tagPanel.setValue(merged.join(', '));
+    scheduleSave();
+
+    ui.toast('已添加标签：' + fresh.join('、'));
+  } catch (err) {
+    ui.toast('生成标签失败：' + err.message);
+  } finally {
+    setAILoading(null);
+  }
+}
+
+/* =========================================================
+   事件绑定
+   ========================================================= */
+function bindEvents() {
+  els.backBtn.addEventListener('click', () => goWorkbench());
+  els.newBtn.addEventListener('click', () => createNote());
+
+  ui.setupDropdown(els.nbBtn, els.nbDropdown, { onOpen: renderNotebookDropdown });
+
+  // 设置按钮：切换设置视图（URL 不变）
+  els.settingsBtn.addEventListener('click', () => {
+    if (currentView === 'settings') showNotesView();
+    else showSettingsView();
+  });
+
+  els.trashBtn.addEventListener('click', () => {
+    if (currentView === 'trash') showNotesView();
+    else showTrashView();
+  });
+
+  els.trashBtn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    ui.closePopMenus(els.trashDropdown);
+    const emptyBtn = els.trashDropdown.querySelector('button[data-action="empty"]');
+    if (emptyBtn) {
+      emptyBtn.disabled = !state.notes.some(
+        (n) => n.notebookId === currentNotebookId && n.deletedAt
+      );
+    }
+    els.trashDropdown.hidden = !els.trashDropdown.hidden;
+  });
+
+  els.trashDropdown.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn || btn.disabled) return;
+    els.trashDropdown.hidden = true;
+    if (btn.dataset.action === 'open') {
+      if (currentView === 'trash') showNotesView();
+      else showTrashView();
+    } else if (btn.dataset.action === 'empty') {
+      emptyTrash(currentNotebookId, () => { renderTrash(); renderList(); });
+    }
+  });
+
+  ui.setupDropdown(els.fileBtn, els.fileDropdown, {
+    items: async (action) => {
+      if (action === 'export') {
+        const info = exportBackup();
+        ui.toast(`已导出 ${info.notebooks} 个笔记本、${info.active} 条笔记（含回收站 ${info.trash} 条）`);
+      } else if (action === 'import') {
+        els.importFile.click();
+      } else if (action === 'clear') {
+        await clearAllData();
+      }
+    },
+  });
+
+  els.importFile.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+
+    try {
+      if (name.endsWith('.md') || name.endsWith('.markdown')) {
+        const text = await file.text();
+        const info = await importMarkdown(text, file.name, currentNotebookId);
+        renderList();
+        selectNote(info.rootId);
+        ui.toast(`已导入 ${info.count} 条笔记，父笔记「${info.rootTitle}」`);
+      } else {
+        const info = await importBackup(file);
+        renderNotebookDropdown();
+        renderList();
+        ui.toast(`导入完成：新增 ${info.added} 条笔记` + (info.skipped ? `，跳过 ${info.skipped} 条重复` : ''));
+      }
+    } catch (err) {
+      console.error('导入失败', err);
+      ui.toast('导入失败：' + err.message);
+    }
+
+    e.target.value = '';
+  });
+
+  // 笔记列表：右键空白处 → 新建笔记
+  els.noteList.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.note-item')) return;
+    e.preventDefault();
+    ui.openCtxMenu(e.clientX, e.clientY, [
+      { heading: '笔记列表' },
+      { label: '新建笔记', action: () => createNote() },
+      { label: '新建笔记本…', action: () => createNotebookFlow() },
+    ]);
+  });
+
+  els.searchInput.addEventListener('input', renderList);
+
+  els.titleInput.addEventListener('input', () => {
+    scheduleSave();
+    const note = state.notes.find((n) => n.id === currentId);
+    if (note) {
+      note.title = els.titleInput.value;
+      renderBreadcrumb(note);
+    }
+  });
+
+  els.titleInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      els.contentInput.focus();
+    }
+  });
+
+  els.contentInput.addEventListener('input', scheduleSave);
+  els.contentInput.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showFmtToolbar(e.clientX, e.clientY);
+  });
+  els.contentInput.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a && a.href) {
+      e.preventDefault();
+      window.open(a.href, '_blank', 'noopener,noreferrer');
+    }
+  });
+
+  // 标签面板
+  els.tagBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    ui.closePopMenus();
+    tagPanel.toggle();
+    syncTagBtn();
+  });
+
+  // AI 菜单
+  els.aiBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willShow = els.aiDropdown.hidden;
+    ui.closePopMenus(els.aiDropdown);
+    els.aiDropdown.hidden = !willShow;
+  });
+
+  els.aiDropdown.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    els.aiDropdown.hidden = true;
+    if (btn.dataset.action === 'summary') await runAISummary();
+    else if (btn.dataset.action === 'tags') await runAITags();
+  });
+
+  els.deleteBtn.addEventListener('click', () => currentId && deleteNoteById(currentId));
+  els.aiInsertBtn.addEventListener('click', insertAIResult);
+  els.aiDiscardBtn.addEventListener('click', hideAIResult);
+
+  // 格式工具栏
+  els.fmtToolbar.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const btn = e.target.closest('button');
+    if (!btn) return;
+
+    const { cmd, block, action } = btn.dataset;
+    if (cmd) execFmt(cmd);
+    else if (block) execFmt('formatBlock', `<${block}>`);
+    else if (action === 'clear') {
+      execFmt('removeFormat');
+      execFmt('formatBlock', '<p>');
+    } else if (action === 'link') insertLink();
+    else if (action === 'table') insertTable();
+
+    updateToolbarState();
+  });
+
+  document.addEventListener('selectionchange', () => {
+    if (!els.fmtToolbar.hidden) updateToolbarState();
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    if (els.fmtToolbar.hidden) return;
+    if (els.fmtToolbar.contains(e.target)) return;
+    hideFmtToolbar();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (ui.isModalOpen()) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) {
+      if (e.key === 'Escape' && !els.fmtToolbar.hidden) hideFmtToolbar();
+      return;
+    }
+    if (e.key === 's') {
+      e.preventDefault();
+      flushSave().then(() => ui.toast('已保存'));
+    }
+    if (e.key === 'n') {
+      e.preventDefault();
+      createNote();
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    // 兜底：离页前把待保存内容写库（不等待）
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      saveNow();
+    }
+  });
+}
+</script>
+
+</body>
+</html>

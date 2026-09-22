@@ -3,3945 +3,481 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FunNotes · 渐进式知识管理笔记</title>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<title>FunNotes · 工作台</title>
+<link rel="stylesheet" href="./shared/style.css">
 <style>
-  [hidden] { display: none !important; }
+  /* 工作台专属：笔记本网格 */
+  .workspace-app { flex-direction: column; }
 
-  :root {
-    --bg: #f6f6f4;
-    --panel: #ffffff;
-    --border: #e8e8e5;
-    --border-strong: #d9d9d4;
-    --text: #1c1c1a;
-    --text-soft: #55554f;
-    --muted: #8e8e86;
-    --accent: #2f6feb;
-    --accent-soft: #edf3fe;
-    --danger: #cf4646;
-    --radius: 8px;
-  }
-
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    font-size: 14px;
-    line-height: 1.6;
-    color: var(--text);
-    background: var(--bg);
-    -webkit-font-smoothing: antialiased;
-  }
-
-  button { font: inherit; cursor: pointer; }
-  input, textarea, select { font: inherit; color: inherit; }
-
-  .app { display: flex; height: 100vh; overflow: hidden; }
-
-  /* ── 侧边栏 ─────────────────────────── */
-  .sidebar {
-    width: 300px;
-    flex: 0 0 300px;
-    background: var(--panel);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
+  .workbench {
+    flex: 1;
     min-height: 0;
-  }
-
-  .sidebar-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 16px 10px;
-  }
-
-  .brand { font-weight: 600; font-size: 15px; }
-
-  .icon-btn {
-    width: 28px; height: 28px;
-    display: grid; place-items: center;
-    border: 1px solid var(--border-strong);
-    background: #fff;
-    border-radius: 6px;
-    font-size: 16px;
-    line-height: 1;
-    color: var(--text-soft);
-    transition: background .15s, border-color .15s, color .15s;
-  }
-  .icon-btn:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .icon-btn.small { width: 28px; height: 28px; flex-shrink: 0; }
-
-  .notebook-bar {
-    display: flex;
-    gap: 6px;
-    padding: 0 16px 10px;
-    align-items: center;
-    position: relative;
-  }
-
-  .notebook-select {
-    flex: 1;
-    min-width: 0;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    outline: none;
-    font-size: 13px;
-    cursor: pointer;
-    transition: border-color .15s, background .15s;
-  }
-  .notebook-select:focus { border-color: var(--accent); background: #fff; }
-
-  .dropdown {
-    position: absolute;
-    top: calc(100% + 2px);
-    right: 16px;
-    min-width: 200px;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 6px 20px rgba(0,0,0,.1);
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    z-index: 50;
-    animation: menu-in .12s ease-out;
-  }
-  @keyframes menu-in {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .dropdown button {
-    text-align: left;
-    padding: 7px 10px;
-    border: none;
-    background: none;
-    border-radius: 5px;
-    font-size: 13px;
-    color: var(--text);
-    transition: background .12s;
-    white-space: nowrap;
-  }
-  .dropdown button:hover { background: var(--bg); }
-  .dropdown button.danger { color: var(--danger); }
-  .dropdown button.danger:hover { background: #fdeeee; }
-  .dropdown button:disabled { opacity: .4; cursor: not-allowed; }
-  .dropdown button:disabled:hover { background: none; }
-
-  .dropdown-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 3px 6px;
-  }
-
-  .search-wrap { padding: 0 16px 10px; }
-
-  .search {
-    width: 100%;
-    padding: 7px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    outline: none;
-    font-size: 13px;
-    transition: border-color .15s, background .15s;
-  }
-  .search:focus { border-color: var(--accent); background: #fff; }
-
-  .note-list {
-    flex: 1;
-    list-style: none;
-    margin: 0;
-    padding: 0 8px 8px;
     overflow-y: auto;
-    min-height: 0;
-  }
-
-  .note-item {
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    margin-bottom: 1px;
-    position: relative;
-    user-select: none;
-    transition: background .12s;
-  }
-  .note-item:hover { background: var(--bg); }
-  .note-item.active { background: var(--accent-soft); }
-  .note-item.dragging { opacity: 0.35; }
-
-  .note-item.drop-before::before {
-    content: '';
-    position: absolute;
-    left: 6px; right: 6px;
-    top: -1px;
-    height: 2px;
-    background: var(--accent);
-    border-radius: 1px;
-  }
-  .note-item.drop-after::after {
-    content: '';
-    position: absolute;
-    left: 6px; right: 6px;
-    bottom: -1px;
-    height: 2px;
-    background: var(--accent);
-    border-radius: 1px;
-  }
-  .note-item.drop-inside {
-    background: var(--accent-soft);
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-
-  .ni-row {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .ni-arrow {
-    width: 16px;
-    height: 16px;
-    display: grid;
-    place-items: center;
-    font-size: 10px;
-    color: var(--muted);
-    flex-shrink: 0;
-    border-radius: 3px;
-    transition: background .12s, color .12s;
-  }
-  .ni-arrow.has-children:hover {
-    background: var(--border);
-    color: var(--text);
-  }
-
-  .ni-title {
-    flex: 1;
-    min-width: 0;
-    font-weight: 500;
-    font-size: 13.5px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-
-  .note-list-empty {
-    padding: 24px 10px;
-    color: var(--muted);
-    font-size: 13px;
-    text-align: center;
-  }
-
-  .sidebar-footer {
-    display: flex;
-    gap: 8px;
-    padding: 10px 16px;
-    border-top: 1px solid var(--border);
-    position: relative;
-  }
-
-  .ghost-btn {
-    flex: 1;
-    padding: 6px 10px;
-    border: 1px solid var(--border-strong);
-    background: #fff;
-    border-radius: 6px;
-    color: var(--text-soft);
-    font-size: 13px;
-    transition: background .15s, border-color .15s, color .15s;
-  }
-  .ghost-btn:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .ghost-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .ghost-btn.small { flex: none; padding: 4px 10px; font-size: 12px; }
-  .ghost-btn.danger:hover {
-    background: #fdeeee; border-color: var(--danger); color: var(--danger);
-  }
-  .ghost-btn.active {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .ghost-btn.drag-over {
-    background: #fdeeee;
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-
-  /* 页脚弹出菜单（向上打开） */
-  .footer-dropdown {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 16px;
-    right: 16px;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 6px 20px rgba(0,0,0,.1);
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    z-index: 50;
-    animation: menu-in .12s ease-out;
-  }
-  .footer-dropdown button {
-    text-align: left;
-    padding: 7px 10px;
-    border: none;
-    background: none;
-    border-radius: 5px;
-    font-size: 13px;
-    color: var(--text);
-    transition: background .12s;
-    white-space: nowrap;
-  }
-  .footer-dropdown button:hover { background: var(--bg); }
-  .footer-dropdown button.danger { color: var(--danger); }
-  .footer-dropdown button.danger:hover { background: #fdeeee; }
-
-  /* ── 主区域 ─────────────────────────── */
-  .main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .empty-state {
-    flex: 1;
-    display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: 4px;
-    color: var(--muted);
-    text-align: center;
-  }
-  .empty-icon { font-size: 40px; margin-bottom: 8px; opacity: .6; }
-  .empty-state p { margin: 0; }
-  .empty-state .muted { font-size: 13px; }
-
-  .editor {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
     width: 100%;
-    max-width: 860px;
+    max-width: 1040px;
     margin: 0 auto;
-    padding: 24px 32px 0;
+    padding: 28px 32px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
   }
 
-  .editor-head {
+  .wb-head {
     display: flex;
-    align-items: flex-start;
+    align-items: flex-end;
     justify-content: space-between;
     gap: 16px;
-  }
-
-  .title-input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 24px;
-    font-weight: 600;
-    padding: 4px 0;
-  }
-  .title-input::placeholder { color: #c8c8c2; }
-
-  .editor-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-    padding-top: 8px;
-  }
-
-  .save-status {
-    font-size: 12px;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  .breadcrumb {
-    margin-top: 2px;
-    font-size: 12px;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    gap: 6px;
     flex-wrap: wrap;
   }
-  .breadcrumb span { white-space: nowrap; }
-  .breadcrumb .sep { color: #ccc; }
+  .wb-title { margin: 0; font-size: 24px; font-weight: 600; }
+  .wb-sub { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
 
-  @keyframes panel-in {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .field { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-  .field-label { font-size: 12px; color: var(--muted); }
-  .field-input {
-    padding: 6px 9px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    outline: none;
-    transition: border-color .15s, background .15s;
-  }
-  .field-input:focus { border-color: var(--accent); background: #fff; }
-
-  .field-row { display: flex; gap: 12px; }
-
-  .ai-result {
-    margin-top: 12px;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: var(--radius);
-    background: var(--panel);
-    animation: panel-in .16s ease-out;
-  }
-  .ai-result-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--accent);
-  }
-  .ai-result-body {
-    white-space: pre-wrap;
-    font-size: 13px;
-    color: var(--text-soft);
-    max-height: 240px;
-    overflow-y: auto;
-  }
-
-  /* ── 富文本内容区 ─────────────────── */
-  .content-input {
-    flex: 1;
-    width: 100%;
-    min-height: 0;
-    margin-top: 12px;
-    padding: 4px 0 24px;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 15px;
-    line-height: 1.8;
-    overflow-y: auto;
-    word-wrap: break-word;
-  }
-  .content-input:focus { outline: none; }
-  .content-input:empty::before {
-    content: attr(data-placeholder);
-    color: #c8c8c2;
-    pointer-events: none;
-  }
-
-  .content-input h1 { font-size: 22px; margin: 18px 0 8px; font-weight: 600; }
-  .content-input h2 { font-size: 18px; margin: 16px 0 6px; font-weight: 600; }
-  .content-input h3 { font-size: 16px; margin: 14px 0 4px; font-weight: 600; }
-  .content-input h4,
-  .content-input h5,
-  .content-input h6 { font-size: 15px; margin: 12px 0 4px; font-weight: 600; }
-  .content-input p { margin: 8px 0; }
-  .content-input ul,
-  .content-input ol { padding-left: 26px; margin: 8px 0; }
-  .content-input li { margin: 2px 0; }
-  .content-input blockquote {
-    border-left: 3px solid var(--border-strong);
-    margin: 10px 0;
-    padding: 2px 0 2px 14px;
-    color: var(--text-soft);
-  }
-  .content-input pre {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px 12px;
-    margin: 10px 0;
-    overflow-x: auto;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  .content-input code {
-    background: var(--bg);
-    border-radius: 3px;
-    padding: 1px 5px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
-  }
-  .content-input pre code {
-    background: none;
-    padding: 0;
-    border-radius: 0;
-  }
-  .content-input table {
-    border-collapse: collapse;
-    margin: 12px 0;
-    width: 100%;
-    font-size: 14px;
-  }
-  .content-input table th,
-  .content-input table td {
-    border: 1px solid var(--border-strong);
-    padding: 6px 10px;
-    text-align: left;
-    vertical-align: top;
-    min-width: 40px;
-  }
-  .content-input table th {
-    background: var(--bg);
-    font-weight: 600;
-  }
-  .content-input a {
-    color: var(--accent);
-    text-decoration: underline;
-    text-decoration-color: rgba(47,111,235,.35);
-  }
-  .content-input img {
-    max-width: 100%;
-    border-radius: 6px;
-    margin: 6px 0;
-  }
-  .content-input hr {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 16px 0;
-  }
-
-  /* ── 回收站视图 ─────────────────────── */
-  .trash-view {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    width: 100%;
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 24px 32px 20px;
-  }
-
-  .trash-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
-  .trash-head-title {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 600;
-  }
-
-  .trash-head-sub {
-    margin-top: 4px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-
-  .trash-list {
+  .nb-grid {
     list-style: none;
     margin: 0;
     padding: 0;
-    overflow-y: auto;
-    min-height: 0;
-    flex: 1;
-  }
-
-  .trash-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: #fff;
-    margin-bottom: 6px;
-    transition: border-color .15s;
-  }
-  .trash-item:hover { border-color: var(--border-strong); }
-
-  .trash-info { min-width: 0; flex: 1; }
-
-  .trash-title {
-    font-weight: 500;
-    font-size: 14px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-
-  .trash-meta {
-    margin-top: 2px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-
-  .trash-actions {
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-
-  .trash-empty {
-    padding: 40px 20px;
-    text-align: center;
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  /* ── 浮动格式工具栏 ─────────────────── */
-  .fmt-toolbar {
-    position: fixed;
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    padding: 4px;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 6px 20px rgba(0,0,0,.14);
-    z-index: 300;
-    animation: menu-in .12s ease-out;
-  }
-
-  .fmt-toolbar button {
-    width: 30px;
-    height: 30px;
     display: grid;
-    place-items: center;
-    border: none;
-    background: none;
-    border-radius: 5px;
-    color: var(--text);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background .12s, color .12s;
-    padding: 0;
-  }
-  .fmt-toolbar button:hover {
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-
-  .fmt-toolbar .tb-sep {
-    width: 1px;
-    height: 16px;
-    background: var(--border);
-    margin: 0 3px;
-    flex-shrink: 0;
-  }
-
-  .fmt-toolbar button.tb-wide {
-    width: auto;
-    min-width: 42px;
-    padding: 0 8px;
-    font-size: 12px;
-  }
-
-  .fmt-toolbar button.active {
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-
-  /* ── 悬浮提示 ───────────────────────── */
-  .tip {
-    position: fixed;
-    z-index: 600;
-    max-width: 260px;
-    padding: 5px 9px;
-    background: #22222a;
-    color: #fff;
-    font-size: 12px;
-    line-height: 1.45;
-    border-radius: 6px;
-    box-shadow: 0 4px 14px rgba(0,0,0,.2);
-    pointer-events: none;
-  }
-
-  /* ── 右键菜单 ───────────────────────── */
-  .ctx-menu {
-    position: fixed;
-    z-index: 500;
-    min-width: 168px;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.13);
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    animation: menu-in .12s ease-out;
-  }
-  .ctx-menu button {
-    text-align: left;
-    padding: 7px 10px;
-    border: none;
-    background: none;
-    border-radius: 5px;
-    font-size: 13px;
-    color: var(--text);
-    white-space: nowrap;
-    transition: background .12s;
-  }
-  .ctx-menu button:hover { background: var(--bg); }
-  .ctx-menu button.danger { color: var(--danger); }
-  .ctx-menu button.danger:hover { background: #fdeeee; }
-  .ctx-menu button:disabled { opacity: .45; cursor: not-allowed; }
-  .ctx-menu button:disabled:hover { background: none; }
-  .ctx-menu .ctx-label {
-    padding: 4px 10px 2px;
-    font-size: 11px;
-    color: var(--muted);
-  }
-
-  /* ── 模态对话框 ─────────────────────── */
-  .modal-mask {
-    position: fixed;
-    inset: 0;
-    z-index: 700;
-    background: rgba(24,24,28,.36);
-    display: grid;
-    place-items: center;
-    padding: 20px;
-    animation: menu-in .12s ease-out;
-  }
-  .modal {
-    width: 100%;
-    max-width: 420px;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.24);
-    padding: 18px 20px 14px;
-    animation: panel-in .16s ease-out;
-  }
-  .modal-title { margin: 0 0 10px; font-size: 16px; font-weight: 600; }
-  .modal-body { display: flex; flex-direction: column; gap: 12px; }
-  .modal-message {
-    margin: 0;
-    font-size: 13px;
-    line-height: 1.7;
-    color: var(--text-soft);
-    white-space: pre-wrap;
-  }
-  .modal-foot {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 18px;
-  }
-  .modal-foot .ghost-btn { flex: none; padding: 6px 16px; }
-  .ghost-btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
-  .ghost-btn.primary:hover {
-    background: #2a63d4;
-    border-color: #2a63d4;
-    color: #fff;
-  }
-  .ghost-btn.primary.danger {
-    background: var(--danger);
-    border-color: var(--danger);
-  }
-  .ghost-btn.primary.danger:hover {
-    background: #b93c3c;
-    border-color: #b93c3c;
-    color: #fff;
-  }
-
-  /* ── 页脚图标按钮 ───────────────────── */
-  .footer-icon-btn {
-    flex: 0 0 38px;
-    width: 38px;
-    height: 32px;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--border-strong);
-    background: #fff;
-    border-radius: 6px;
-    font-size: 15px;
-    line-height: 1;
-    color: var(--text-soft);
-    transition: background .15s, border-color .15s, color .15s;
-  }
-  .footer-icon-btn:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-  }
-  .footer-icon-btn.active {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .footer-icon-btn.drag-over {
-    background: #fdeeee;
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-  #fileBtn { flex: 1; white-space: nowrap; }
-
-  /* ── 设置视图 ───────────────────────── */
-  .settings-view {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    width: 100%;
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 24px 32px 20px;
-  }
-  .settings-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-  .settings-title { margin: 0; font-size: 20px; font-weight: 600; }
-  .settings-body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: 14px;
-    padding-bottom: 20px;
-  }
-  .settings-section {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: #fff;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .settings-section h3 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .settings-hint {
-    margin: 0;
-    font-size: 12px;
-    line-height: 1.65;
-    color: var(--muted);
-  }
-  .settings-kv {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    font-size: 13px;
-    color: var(--text-soft);
-  }
-  .settings-kv kbd {
-    font-family: inherit;
-    font-size: 12px;
-    color: var(--muted);
   }
 
-  .tag-manage-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    max-height: 280px;
-    overflow-y: auto;
-  }
-  .tag-manage-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 9px;
-    border-radius: 6px;
-    transition: background .12s;
-  }
-  .tag-manage-item:hover { background: var(--bg); }
-  .tag-manage-name {
-    flex: 1;
-    min-width: 0;
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .tag-manage-count { font-size: 12px; color: var(--muted); flex-shrink: 0; }
-  .tag-manage-empty {
-    padding: 10px 4px;
-    font-size: 13px;
-    color: var(--muted);
-  }
-
-  /* ── 标签面板 / 标签选择器 ─────────── */
-  .tag-panel {
-    margin-top: 12px;
-    padding: 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--panel);
-    animation: panel-in .16s ease-out;
-  }
-  .tag-input-wrap {
+  .nb-card {
     position: relative;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .tag-input-wrap .field-input { flex: 1; min-width: 0; }
-  .tag-picker {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    right: 0;
-    z-index: 80;
-    max-height: 240px;
-    overflow-y: auto;
-    background: #fff;
     border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.13);
-    padding: 4px;
+    border-radius: 12px;
+    background: #fff;
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+  }
+  .nb-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 6px 18px rgba(0,0,0,.08);
+    transform: translateY(-1px);
+  }
+
+  .nb-card-main {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    animation: menu-in .12s ease-out;
+    align-items: flex-start;
+    gap: 6px;
+    width: 100%;
+    min-height: 118px;
+    padding: 18px 16px;
+    background: none;
+    border: none;
+    border-radius: 12px;
+    text-align: left;
   }
-  .tag-picker-empty { padding: 8px 10px; font-size: 12px; color: var(--muted); }
-  .tag-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 9px;
-    border-radius: 5px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: background .12s;
-  }
-  .tag-row:hover { background: var(--bg); }
-  .tag-row .tag-check { width: 14px; flex-shrink: 0; color: var(--accent); font-size: 12px; }
-  .tag-row .tag-name {
-    flex: 1;
-    min-width: 0;
+
+  .nb-icon { font-size: 26px; line-height: 1; }
+  .nb-name {
+    font-size: 15px;
+    font-weight: 600;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .tag-row .tag-count { font-size: 11px; color: var(--muted); flex-shrink: 0; }
-  .tag-row.new-tag {
-    color: var(--accent);
-    margin-top: 3px;
-    border-top: 1px solid var(--border);
-    border-radius: 0 0 5px 5px;
-    padding-top: 8px;
-  }
+  .nb-meta { font-size: 12px; color: var(--muted); }
 
-  /* ── 编辑器右上角小菜单 ─────────────── */
-  .editor-meta { position: relative; }
-  .editor-menu {
+  .nb-more {
     position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    min-width: 170px;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.13);
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    z-index: 120;
-    animation: menu-in .12s ease-out;
-  }
-  .editor-menu button {
-    text-align: left;
-    padding: 7px 10px;
-    border: none;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    border: 1px solid transparent;
     background: none;
-    border-radius: 5px;
-    font-size: 13px;
-    color: var(--text);
-    white-space: nowrap;
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity .15s, background .15s, color .15s, border-color .15s;
   }
-  .editor-menu button:hover { background: var(--bg); }
+  .nb-card:hover .nb-more { opacity: 1; }
+  .nb-more:hover { background: var(--bg); color: var(--text); border-color: var(--border); }
 
-  /* ── Toast ──────────────────────────── */
-  .toast {
-    position: fixed;
-    left: 50%;
-    bottom: 28px;
-    transform: translateX(-50%);
-    display: flex;
+  .nb-card.new { border-style: dashed; }
+  .nb-card.new .nb-card-main {
     align-items: center;
-    gap: 16px;
-    padding: 10px 14px 10px 18px;
-    background: #22222a;
-    color: #fff;
-    border-radius: 8px;
+    justify-content: center;
+    color: var(--muted);
     font-size: 13px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    z-index: 400;
-    animation: toast-in .18s ease-out;
   }
-  .toast button {
-    border: none;
-    background: none;
-    color: #7cb0ff;
-    font-weight: 600;
-    padding: 0;
-  }
-  @keyframes toast-in {
-    from { opacity: 0; transform: translate(-50%, 8px); }
-    to   { opacity: 1; transform: translate(-50%, 0); }
+  .nb-card.new:hover .nb-card-main { color: var(--accent); }
+  .nb-card.new .nb-plus { font-size: 22px; }
+
+  /* 底栏的下拉菜单靠右收窄，避免横跨整页 */
+  .footer-bar .footer-dropdown {
+    left: auto;
+    right: 20px;
+    min-width: 220px;
   }
 
   @media (max-width: 720px) {
-    .sidebar { width: 220px; flex-basis: 220px; }
-    .editor { padding: 16px 16px 0; }
-    .trash-view { padding: 16px; }
-    .editor-head { flex-direction: column; align-items: stretch; gap: 4px; }
-    .editor-meta { padding-top: 0; }
-    .field-row { flex-direction: column; }
+    .workbench { padding: 20px 16px 24px; }
+    .nb-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .wb-head { align-items: stretch; }
   }
 </style>
 </head>
 <body>
 
-<div class="app">
-  <!-- 侧边栏 -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <span class="brand">📓 FunNotes</span>
-      <button class="icon-btn" id="newBtn" data-tip="新建笔记（Ctrl+N）" aria-label="新建笔记">＋</button>
-    </div>
-
-    <div class="notebook-bar">
-      <select id="notebookSelect" class="notebook-select" title="切换笔记本"></select>
-      <button class="icon-btn small" id="notebookMenuBtn" data-tip="笔记本操作" aria-label="笔记本操作">⋯</button>
-      <div class="dropdown" id="notebookDropdown" hidden>
-        <button data-action="new">新建笔记本</button>
-        <button data-action="rename">重命名当前笔记本</button>
-        <div class="dropdown-divider"></div>
-        <button data-action="delete" class="danger">删除当前笔记本</button>
-      </div>
-    </div>
-
-    <div class="search-wrap">
-      <input id="searchInput" class="search" placeholder="搜索标题、正文或标签…">
-    </div>
-
-    <ul class="note-list" id="noteList"></ul>
-
-    <div class="sidebar-footer">
-      <button class="footer-icon-btn" id="settingsBtn" data-tip="设置：AI 配置、标签管理" aria-label="设置">⚙️</button>
-      <button class="footer-icon-btn" id="trashBtn" data-tip="回收站：左键打开，右键查看更多" aria-label="回收站">🗑️</button>
-      <button class="ghost-btn" id="fileBtn" data-tip="文件：导入 / 导出 / 清空数据">📁 文件</button>
-
-      <div class="footer-dropdown" id="trashDropdown" hidden>
-        <button data-action="open">打开回收站</button>
-        <div class="dropdown-divider"></div>
-        <button data-action="empty" class="danger">清空回收站</button>
-      </div>
-
-      <div class="footer-dropdown" id="fileDropdown" hidden>
-        <button data-action="export">导出备份</button>
-        <button data-action="import">导入文件（.json / .md）</button>
-        <div class="dropdown-divider"></div>
-        <button data-action="clear" class="danger">清空所有数据</button>
-      </div>
-
-      <input type="file" id="importFile"
-             accept=".json,.md,.markdown,application/json,text/markdown,text/plain"
-             hidden>
-    </div>
-  </aside>
-
-  <!-- 主区域 -->
+<div class="app workspace-app">
   <main class="main">
-    <div class="empty-state" id="emptyState">
-      <div class="empty-icon">📝</div>
-      <p>还没有笔记</p>
-      <p class="muted">点左上角的 ＋ 新建一条</p>
-    </div>
-
-    <div class="editor" id="editor" hidden>
-      <div class="editor-head">
-        <div style="flex:1;min-width:0">
-          <input id="titleInput" class="title-input" placeholder="标题">
-          <div class="breadcrumb" id="breadcrumb"></div>
-        </div>
-        <div class="editor-meta">
-          <span class="save-status" id="saveStatus"></span>
-          <button class="ghost-btn small" id="tagBtn" aria-expanded="false" data-tip="标签：编辑、选择已有标签">标签 ▾</button>
-          <button class="ghost-btn small" id="aiBtn" aria-expanded="false" data-tip="AI 工具（在设置里配置）" hidden>AI ▾</button>
-          <div class="editor-menu" id="aiDropdown" hidden>
-            <button data-action="summary">AI 总结本篇</button>
-            <button data-action="tags">AI 生成标签</button>
-          </div>
-          <button class="ghost-btn small danger" id="deleteBtn">删除</button>
-        </div>
-      </div>
-
-      <div class="tag-panel" id="tagPanel" hidden>
-        <div class="field">
-          <span class="field-label">标签（用逗号分隔；右键标签可改名）</span>
-          <div class="tag-input-wrap">
-            <input id="tagsInput" class="field-input" placeholder="如：HCI, 作业, 灵感">
-            <button class="icon-btn small" id="tagPickerBtn"
-                    data-tip="选择已有标签，或新建标签" aria-label="选择已有标签">▾</button>
-            <div class="tag-picker" id="tagPicker" hidden></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="ai-result" id="aiResult" hidden>
-        <div class="ai-result-head">
-          <span id="aiResultTitle">AI 结果</span>
-          <div style="display:flex;gap:6px">
-            <button class="ghost-btn small" id="aiInsertBtn">插入正文</button>
-            <button class="ghost-btn small" id="aiDiscardBtn">丢弃</button>
-          </div>
-        </div>
-        <div class="ai-result-body" id="aiResultBody"></div>
-      </div>
-
-      <div id="contentInput" class="content-input" contenteditable="true"
-           data-placeholder="开始写点什么…  右键唤出格式工具栏"></div>
-    </div>
-
-    <!-- 回收站视图 -->
-    <div class="trash-view" id="trashView" hidden>
-      <div class="trash-head">
+    <!-- 工作台：笔记本网格 -->
+    <div class="workbench" id="workbenchView">
+      <div class="wb-head">
         <div>
-          <h2 class="trash-head-title">🗑️ 回收站</h2>
-          <div class="trash-head-sub" id="trashCount"></div>
+          <h1 class="wb-title">📓 FunNotes</h1>
+          <p class="wb-sub" id="wbSub">选择一个笔记本开始</p>
         </div>
-        <button class="ghost-btn small danger" id="emptyTrashBtn">清空回收站</button>
+        <button class="ghost-btn primary" id="newNbBtn" data-tip="新建笔记本后直接进入笔记页">＋ 新建笔记本</button>
       </div>
-      <ul class="trash-list" id="trashList"></ul>
+      <ul class="nb-grid" id="nbGrid"></ul>
     </div>
 
-    <!-- 设置视图 -->
-    <div class="settings-view" id="settingsView" hidden>
-      <div class="settings-head">
-        <h2 class="settings-title">⚙️ 设置</h2>
-        <button class="ghost-btn small" id="settingsCloseBtn">返回笔记</button>
-      </div>
-
-      <div class="settings-body">
-        <section class="settings-section">
-          <h3>AI 配置</h3>
-          <p class="settings-hint">
-            配置只保存在本机浏览器，不会上传。填好 API Key 后，笔记右上角会出现「AI」按钮，
-            可用它总结笔记或生成标签。
-          </p>
-          <div class="field-row">
-            <label class="field">
-              <span class="field-label">API Base</span>
-              <input id="apiBase" class="field-input" placeholder="https://api.deepseek.com/v1">
-            </label>
-            <label class="field">
-              <span class="field-label">模型</span>
-              <input id="apiModel" class="field-input" placeholder="deepseek-chat">
-            </label>
-          </div>
-          <label class="field">
-            <span class="field-label">API Key（只存在你本地浏览器里）</span>
-            <input id="apiKey" type="password" class="field-input" placeholder="sk-...">
-          </label>
-        </section>
-
-        <section class="settings-section">
-          <h3>标签管理</h3>
-          <p class="settings-hint">
-            右键标签可以重命名或删除。重命名会同步更新所有使用该标签的笔记，请谨慎操作。
-          </p>
-          <ul class="tag-manage-list" id="tagManageList"></ul>
-        </section>
-
-        <section class="settings-section">
-          <h3>关于 FunNotes</h3>
-          <div class="settings-kv"><span>版本</span><span>3.1</span></div>
-          <div class="settings-kv"><span>数据存储</span><span>浏览器本地（IndexedDB）</span></div>
-          <div class="settings-kv"><span>新建笔记</span><kbd>Ctrl + N</kbd></div>
-          <div class="settings-kv"><span>立即保存</span><kbd>Ctrl + S</kbd></div>
-          <p class="settings-hint">
-            笔记可以拖拽调整层级；右键笔记、右键标签、右键回收站都有更多操作。
-          </p>
-        </section>
-      </div>
-    </div>
+    <!-- 设置视图（主区域整块替换，URL 不变） -->
+    <div class="settings-view" id="settingsView" hidden></div>
   </main>
-</div>
 
-<!-- 浮动格式工具栏 -->
-<div class="fmt-toolbar" id="fmtToolbar" hidden>
-  <button data-cmd="bold" data-tip="加粗（Ctrl+B）"><b>B</b></button>
-  <button data-cmd="italic" data-tip="斜体（Ctrl+I）"><i>I</i></button>
-  <button data-cmd="underline" data-tip="下划线（Ctrl+U）"><u>U</u></button>
-  <button data-cmd="strikeThrough" data-tip="删除线"><s>S</s></button>
-  <span class="tb-sep"></span>
-  <button data-block="h1" data-tip="一级标题">H1</button>
-  <button data-block="h2" data-tip="二级标题">H2</button>
-  <button data-block="h3" data-tip="三级标题">H3</button>
-  <button data-block="p" class="tb-wide" data-tip="正文：取消标题，变回普通段落">正文</button>
-  <span class="tb-sep"></span>
-  <button data-cmd="insertUnorderedList" data-tip="无序列表">•</button>
-  <button data-cmd="insertOrderedList" data-tip="有序列表">1.</button>
-  <button data-block="blockquote" data-tip="引用">❝</button>
-  <button data-block="pre" data-tip="代码块">⟨⟩</button>
-  <span class="tb-sep"></span>
-  <button data-action="link" data-tip="插入链接">🔗</button>
-  <button data-action="table" data-tip="插入表格">⊞</button>
-  <span class="tb-sep"></span>
-  <button data-action="clear" data-tip="清除格式：取消加粗、标题等">⌫</button>
-</div>
+  <div class="footer-bar">
+    <button class="footer-icon-btn" id="homeBtn" data-tip="笔记本列表" aria-label="笔记本列表">📓</button>
+    <button class="footer-icon-btn" id="settingsBtn" data-tip="设置：AI 配置、标签管理" aria-label="设置">⚙️</button>
+    <button class="ghost-btn" id="fileBtn" data-tip="文件：导入 / 导出 / 清空数据">📁 文件</button>
 
-<div class="toast" id="toast" hidden>
-  <span id="toastMsg"></span>
-  <button id="toastAction">撤销</button>
-</div>
-
-<!-- 悬浮提示 -->
-<div class="tip" id="tip" hidden></div>
-
-<!-- 右键菜单 -->
-<div class="ctx-menu" id="ctxMenu" hidden></div>
-
-<!-- 通用对话框 -->
-<div class="modal-mask" id="modalMask" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <h3 class="modal-title" id="modalTitle"></h3>
-    <div class="modal-body" id="modalBody"></div>
-    <div class="modal-foot">
-      <button class="ghost-btn" id="modalCancel">取消</button>
-      <button class="ghost-btn primary" id="modalOk">确定</button>
+    <div class="footer-dropdown" id="fileDropdown" hidden>
+      <button data-action="export">导出备份</button>
+      <button data-action="import">导入文件（.json / .md）</button>
+      <div class="dropdown-divider"></div>
+      <button data-action="clear" class="danger">清空所有数据</button>
     </div>
+
+    <input type="file" id="importFile"
+           accept=".json,.md,.markdown,application/json,text/markdown,text/plain" hidden>
   </div>
 </div>
 
-<script>
-/* =========================================================
-   工具
-   ========================================================= */
-const $ = (sel) => document.querySelector(sel);
-const genId = () => 'n_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const genNbId = () => 'nb_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+<script type="module">
+import {
+  $, LS_CURRENT_NB, readStore, writeStore, takeNotice, formatTime, DEFAULT_NOTEBOOK_NAME,
+} from './shared/utils.js';
+import {
+  state, loadAll, sortedNotebooks, notesInNotebook, createNotebook, saveNotebook,
+  deleteNotebookCascade, exportBackup, importBackup, importMarkdown, resetAll,
+} from './shared/db.js';
+import * as ui from './shared/ui.js';
+import { createSettingsView } from './shared/settings.js';
 
-const MAX_DEPTH = 4;
+ui.initUi();
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function isLikelyHtml(str) {
-  return /<(p|div|br|h[1-6]|ul|ol|li|table|thead|tbody|tr|td|th|strong|em|b|i|u|s|a|blockquote|pre|code|img|hr)\b/i.test(str || '');
-}
-
-/** 过滤导入内容里的脚本与危险属性，避免恶意 .md / .json 影响页面 */
-const BLOCKED_TAGS = new Set([
-  'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet',
-  'form', 'input', 'button', 'textarea', 'select', 'option', 'link', 'meta',
-  'base', 'svg', 'math', 'template',
-]);
-
-function sanitizeHtml(html) {
-  const src = String(html || '');
-  if (!src) return '';
-  const tpl = document.createElement('template');
-  tpl.innerHTML = src;
-
-  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_ELEMENT);
-  const doomed = [];
-  let node = walker.nextNode();
-
-  while (node) {
-    const tag = node.tagName.toLowerCase();
-    if (BLOCKED_TAGS.has(tag)) {
-      doomed.push(node);
-      node = walker.nextNode();
-      continue;
-    }
-
-    Array.from(node.attributes).forEach((attr) => {
-      const name = attr.name.toLowerCase();
-      const value = attr.value || '';
-      const isUrl = name === 'href' || name === 'src' || name === 'xlink:href';
-      if (name.startsWith('on') || (isUrl && /^\s*(javascript|vbscript|data:text\/html)/i.test(value))) {
-        node.removeAttribute(attr.name);
-      }
-    });
-
-    node = walker.nextNode();
-  }
-
-  doomed.forEach((n) => n.remove());
-  return tpl.innerHTML;
-}
-
-/* =========================================================
-   IndexedDB 封装
-   ========================================================= */
-const DB = (() => {
-  const NAME = 'progressive-notes';
-  const NOTES = 'notes';
-  const NOTEBOOKS = 'notebooks';
-  const VERSION = 2;
-  let dbp = null;
-
-  function open() {
-    if (!dbp) {
-      dbp = new Promise((resolve, reject) => {
-        const req = indexedDB.open(NAME, VERSION);
-        req.onupgradeneeded = (e) => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(NOTES)) {
-            db.createObjectStore(NOTES, { keyPath: 'id' });
-          }
-          if (!db.objectStoreNames.contains(NOTEBOOKS)) {
-            db.createObjectStore(NOTEBOOKS, { keyPath: 'id' });
-          }
-          if (e.oldVersion >= 1 && e.oldVersion < 2) {
-            const tx = e.target.transaction;
-            const noteStore = tx.objectStore(NOTES);
-            const nbStore = tx.objectStore(NOTEBOOKS);
-            const defaultNbId = 'nb_default';
-            nbStore.put({
-              id: defaultNbId,
-              name: '我的笔记',
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            });
-            let i = 0;
-            noteStore.openCursor().onsuccess = (ev) => {
-              const cur = ev.target.result;
-              if (cur) {
-                const n = cur.value;
-                if (!n.notebookId) n.notebookId = defaultNbId;
-                if (n.parentId === undefined) n.parentId = null;
-                if (n.order === undefined) n.order = i++;
-                cur.update(n);
-                cur.continue();
-              }
-            };
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-    }
-    return dbp;
-  }
-
-  async function tx(storeName, mode, fn) {
-    const db = await open();
-    return new Promise((resolve, reject) => {
-      const t = db.transaction(storeName, mode);
-      const store = t.objectStore(storeName);
-      let result;
-      const req = fn(store);
-      if (req) req.onsuccess = () => { result = req.result; };
-      t.oncomplete = () => resolve(result);
-      t.onerror = () => reject(t.error);
-      t.onabort = () => reject(t.error);
-    });
-  }
-
-  return {
-    allNotes: () => tx(NOTES, 'readonly', (s) => s.getAll()),
-    putNote: (n) => tx(NOTES, 'readwrite', (s) => s.put(n)),
-    delNote: (id) => tx(NOTES, 'readwrite', (s) => s.delete(id)),
-    bulkPutNotes: (list) => tx(NOTES, 'readwrite', (s) => { list.forEach((n) => s.put(n)); }),
-    bulkDelNotes: (ids) => tx(NOTES, 'readwrite', (s) => { ids.forEach((id) => s.delete(id)); }),
-    clearNotes: () => tx(NOTES, 'readwrite', (s) => s.clear()),
-
-    allNotebooks: () => tx(NOTEBOOKS, 'readonly', (s) => s.getAll()),
-    putNotebook: (nb) => tx(NOTEBOOKS, 'readwrite', (s) => s.put(nb)),
-    delNotebook: (id) => tx(NOTEBOOKS, 'readwrite', (s) => s.delete(id)),
-    clearNotebooks: () => tx(NOTEBOOKS, 'readwrite', (s) => s.clear()),
-  };
-})();
-
-/* =========================================================
-   状态
-   ========================================================= */
-let notebooks = [];
-let notes = [];
-let currentNotebookId = null;
-let currentId = null;
-let currentView = 'notes'; // 'notes' | 'trash'
-let lastSelectedId = null;
-let saveTimer = null;
-let lastDeletedIds = null;
-let toastTimer = null;
-let aiResultMode = null;
-let tipTimer = null;
-let tipTarget = null;
-let modalState = null;
-const collapsedIds = new Set();
-let dragState = null;
-let dropTarget = null;
-
-/* =========================================================
-   元素
-   ========================================================= */
 const els = {
-  newBtn: $('#newBtn'),
-  notebookSelect: $('#notebookSelect'),
-  notebookMenuBtn: $('#notebookMenuBtn'),
-  notebookDropdown: $('#notebookDropdown'),
-  searchInput: $('#searchInput'),
-  noteList: $('#noteList'),
-
-  settingsBtn: $('#settingsBtn'),
+  workbench: $('#workbenchView'),
+  wbSub: $('#wbSub'),
+  nbGrid: $('#nbGrid'),
+  newNbBtn: $('#newNbBtn'),
   settingsView: $('#settingsView'),
-  settingsCloseBtn: $('#settingsCloseBtn'),
-  tagManageList: $('#tagManageList'),
-
+  homeBtn: $('#homeBtn'),
+  settingsBtn: $('#settingsBtn'),
   fileBtn: $('#fileBtn'),
   fileDropdown: $('#fileDropdown'),
-  trashBtn: $('#trashBtn'),
-  trashDropdown: $('#trashDropdown'),
   importFile: $('#importFile'),
-
-  emptyState: $('#emptyState'),
-  editor: $('#editor'),
-  titleInput: $('#titleInput'),
-  breadcrumb: $('#breadcrumb'),
-  saveStatus: $('#saveStatus'),
-  tagBtn: $('#tagBtn'),
-  aiBtn: $('#aiBtn'),
-  aiDropdown: $('#aiDropdown'),
-  deleteBtn: $('#deleteBtn'),
-  tagPanel: $('#tagPanel'),
-  tagsInput: $('#tagsInput'),
-  tagPickerBtn: $('#tagPickerBtn'),
-  tagPicker: $('#tagPicker'),
-
-  apiBase: $('#apiBase'),
-  apiModel: $('#apiModel'),
-  apiKey: $('#apiKey'),
-
-  aiResult: $('#aiResult'),
-  aiResultTitle: $('#aiResultTitle'),
-  aiResultBody: $('#aiResultBody'),
-  aiInsertBtn: $('#aiInsertBtn'),
-  aiDiscardBtn: $('#aiDiscardBtn'),
-
-  contentInput: $('#contentInput'),
-  fmtToolbar: $('#fmtToolbar'),
-
-  trashView: $('#trashView'),
-  trashList: $('#trashList'),
-  trashCount: $('#trashCount'),
-  emptyTrashBtn: $('#emptyTrashBtn'),
-
-  toast: $('#toast'),
-  toastMsg: $('#toastMsg'),
-  toastAction: $('#toastAction'),
-
-  tip: $('#tip'),
-  ctxMenu: $('#ctxMenu'),
-  modalMask: $('#modalMask'),
-  modalTitle: $('#modalTitle'),
-  modalBody: $('#modalBody'),
-  modalOk: $('#modalOk'),
-  modalCancel: $('#modalCancel'),
 };
 
+let settingsView = null;
+let currentView = 'grid';   // 'grid' | 'settings'
+
 /* =========================================================
-   工具函数
+   启动
    ========================================================= */
-function parseTags(str) {
-  return [...new Set(str.split(/[,，]/).map((s) => s.trim()).filter(Boolean))];
-}
+async function boot() {
+  await loadAll();
 
-function formatTime(ts) {
-  const d = new Date(ts);
-  const now = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  if (d.toDateString() === now.toDateString()) return `${hh}:${mm}`;
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`;
-}
-
-function renderSaveStatus(ts) {
-  els.saveStatus.textContent = ts ? '已保存 ' + formatTime(ts) : '';
-}
-
-/** 构建索引，跳过已删除笔记 */
-function buildIndexes() {
-  const byId = new Map();
-  const byParent = new Map();
-  notes.forEach((n) => {
-    if (n.deletedAt) return;
-    byId.set(n.id, n);
-    const p = n.parentId || null;
-    if (!byParent.has(p)) byParent.set(p, []);
-    byParent.get(p).push(n);
+  settingsView = createSettingsView({
+    root: els.settingsView,
+    onClose: () => showGrid(),
   });
-  byParent.forEach((arr) => arr.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
-  return { byId, byParent };
+
+  bindEvents();
+  renderGrid();
+  showGrid();
+
+  // 从笔记页跳回来时带的提示（例如无效 nb）
+  const notice = takeNotice();
+  if (notice) ui.toast(notice);
 }
 
-function getDepth(noteId, byId) {
-  let d = 0;
-  let cur = byId.get(noteId);
-  let guard = 0;
-  while (cur && cur.parentId && guard++ < 100) {
-    d++;
-    cur = byId.get(cur.parentId);
-  }
-  return d;
-}
-
-function getSubtreeHeight(noteId, byParent) {
-  let h = 0;
-  const children = byParent.get(noteId) || [];
-  for (const c of children) {
-    h = Math.max(h, getSubtreeHeight(c.id, byParent) + 1);
-  }
-  return h;
-}
-
-function isDescendantOf(candidateId, ancestorId, byId) {
-  let cur = byId.get(candidateId);
-  let guard = 0;
-  while (cur && cur.parentId && guard++ < 100) {
-    if (cur.parentId === ancestorId) return true;
-    cur = byId.get(cur.parentId);
-  }
-  return false;
-}
-
-/** 收集子树（包含已删除的），用于批量操作 */
-function collectSubtree(rootId) {
-  const result = [];
-  const root = notes.find((n) => n.id === rootId);
-  if (!root) return result;
-  result.push(root);
-  notes.filter((n) => n.parentId === rootId).forEach((c) => {
-    result.push(...collectSubtree(c.id));
-  });
-  return result;
-}
-
-/* =========================================================
-   Toast
-   ========================================================= */
-function showToast(msg, actionLabel, onAction) {
-  els.toastMsg.textContent = msg;
-
-  if (actionLabel) {
-    els.toastAction.hidden = false;
-    els.toastAction.textContent = actionLabel;
-    els.toastAction.onclick = () => { if (onAction) onAction(); };
-  } else {
-    els.toastAction.hidden = true;
-  }
-
-  els.toast.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, actionLabel ? 6000 : 2200);
-}
-
-function hideToast() {
-  els.toast.hidden = true;
-  clearTimeout(toastTimer);
-}
-
-/* =========================================================
-   悬浮提示（所有带 data-tip 的元素自动生效）
-   ========================================================= */
-const TIP_DELAY = 320;
-
-function showTip(el) {
-  const text = el.dataset.tip;
-  if (!text) return;
-  tipTarget = el;
-  els.tip.textContent = text;
-  els.tip.hidden = false;
-  els.tip.style.left = '0px';
-  els.tip.style.top = '0px';
-
-  const r = el.getBoundingClientRect();
-  const tw = els.tip.offsetWidth;
-  const th = els.tip.offsetHeight;
-  let left = Math.max(8, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 8));
-  let top = r.top - th - 8;
-  if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - th - 8);
-
-  els.tip.style.left = left + 'px';
-  els.tip.style.top = Math.max(8, top) + 'px';
-}
-
-function hideTip() {
-  clearTimeout(tipTimer);
-  tipTimer = null;
-  tipTarget = null;
-  els.tip.hidden = true;
-}
-
-document.addEventListener('mouseover', (e) => {
-  const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
-  if (!el || el === tipTarget) return;
-  hideTip();
-  tipTimer = setTimeout(() => {
-    tipTimer = null;
-    if (el.isConnected) showTip(el);
-  }, TIP_DELAY);
+boot().catch((err) => {
+  console.error(err);
+  ui.toast('页面初始化失败：' + err.message);
 });
 
-document.addEventListener('mouseout', (e) => {
-  const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
-  if (!el) return;
-  if (e.relatedTarget && el.contains(e.relatedTarget)) return;
-  if (el === tipTarget || tipTimer) hideTip();
-});
+/* =========================================================
+   视图切换（URL 不变）
+   ========================================================= */
+function showGrid() {
+  currentView = 'grid';
+  els.workbench.hidden = false;
+  els.settingsView.hidden = true;
+  els.homeBtn.classList.add('active');
+  els.settingsBtn.classList.remove('active');
+}
 
-// 键盘操作（Tab 聚焦）时也显示提示，方便不用鼠标的人
-document.addEventListener('focusin', (e) => {
-  const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
-  if (!el) return;
-  let keyboardFocus = false;
-  try { keyboardFocus = el.matches(':focus-visible'); } catch (_) {}
-  if (!keyboardFocus) return;
-  hideTip();
-  showTip(el);
-});
-
-document.addEventListener('focusout', hideTip);
-
-window.addEventListener('scroll', hideTip, true);
-window.addEventListener('resize', hideTip);
-document.addEventListener('mousedown', hideTip, true);
+function showSettings() {
+  currentView = 'settings';
+  els.workbench.hidden = true;
+  els.settingsView.hidden = false;
+  els.homeBtn.classList.remove('active');
+  els.settingsBtn.classList.add('active');
+  settingsView.render();
+}
 
 /* =========================================================
-   右键菜单
+   笔记本网格
    ========================================================= */
-function openCtxMenu(x, y, items) {
-  const menu = els.ctxMenu;
-  menu.innerHTML = '';
+function renderGrid() {
+  const list = sortedNotebooks();
 
-  items.forEach((item) => {
-    if (item.separator) {
-      const d = document.createElement('div');
-      d.className = 'dropdown-divider';
-      menu.appendChild(d);
-      return;
-    }
-    if (item.heading) {
-      const h = document.createElement('div');
-      h.className = 'ctx-label';
-      h.textContent = item.heading;
-      menu.appendChild(h);
-      return;
-    }
-    const btn = document.createElement('button');
-    btn.textContent = item.label;
-    if (item.danger) btn.classList.add('danger');
-    if (item.disabled) btn.disabled = true;
-    btn.addEventListener('click', () => {
-      closeCtxMenu();
-      if (item.action) item.action();
-    });
-    menu.appendChild(btn);
+  els.wbSub.textContent = `共 ${list.length} 个笔记本 · 点击卡片进入笔记页`;
+
+  els.nbGrid.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  list.forEach((nb) => frag.appendChild(buildCard(nb)));
+
+  const newCard = document.createElement('li');
+  newCard.className = 'nb-card new';
+  const newBtn = document.createElement('button');
+  newBtn.className = 'nb-card-main';
+  newBtn.innerHTML = '<span class="nb-plus">＋</span><span>新建笔记本</span>';
+  newBtn.addEventListener('click', createNotebookFlow);
+  newCard.appendChild(newBtn);
+  frag.appendChild(newCard);
+
+  els.nbGrid.appendChild(frag);
+}
+
+function buildCard(nb) {
+  const active = notesInNotebook(nb.id);
+  const trashed = state.notes.filter((n) => n.notebookId === nb.id && n.deletedAt).length;
+  const latest = active.reduce((max, n) => Math.max(max, n.updatedAt || 0), 0);
+
+  const li = document.createElement('li');
+  li.className = 'nb-card';
+  li.dataset.id = nb.id;
+
+  const main = document.createElement('button');
+  main.className = 'nb-card-main';
+  main.title = '打开笔记本';
+
+  const icon = document.createElement('span');
+  icon.className = 'nb-icon';
+  icon.textContent = '📓';
+
+  const name = document.createElement('span');
+  name.className = 'nb-name';
+  name.textContent = nb.name;
+
+  const meta = document.createElement('span');
+  meta.className = 'nb-meta';
+  meta.textContent = active.length
+    ? `${active.length} 条笔记 · 最后编辑 ${formatTime(latest)}`
+    : (trashed ? `还没有笔记 · 回收站 ${trashed} 条` : '还没有笔记');
+
+  main.append(icon, name, meta);
+  main.addEventListener('click', () => openNotebook(nb.id));
+
+  const more = document.createElement('button');
+  more.className = 'nb-more';
+  more.textContent = '⋯';
+  more.setAttribute('aria-label', '笔记本操作');
+  more.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const r = more.getBoundingClientRect();
+    openNotebookMenu(nb.id, r.left, r.bottom + 4);
   });
 
-  menu.hidden = false;
-  menu.style.left = '0px';
-  menu.style.top = '0px';
-  const rect = menu.getBoundingClientRect();
-  menu.style.left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)) + 'px';
-  menu.style.top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8)) + 'px';
-}
-
-function closeCtxMenu() {
-  els.ctxMenu.hidden = true;
-  els.ctxMenu.innerHTML = '';
-}
-
-/* =========================================================
-   通用对话框（替代原生 confirm / prompt）
-   ========================================================= */
-function openModal(opts) {
-  const o = opts || {};
-  return new Promise((resolve) => {
-    modalState = { resolve, fields: [] };
-
-    els.modalTitle.textContent = o.title || '';
-    els.modalBody.innerHTML = '';
-
-    if (o.message) {
-      const p = document.createElement('p');
-      p.className = 'modal-message';
-      p.textContent = o.message;
-      els.modalBody.appendChild(p);
-    }
-
-    (o.fields || []).forEach((f) => {
-      const wrap = document.createElement('label');
-      wrap.className = 'field';
-      if (f.label) {
-        const label = document.createElement('span');
-        label.className = 'field-label';
-        label.textContent = f.label;
-        wrap.appendChild(label);
-      }
-      const input = document.createElement('input');
-      input.className = 'field-input';
-      input.type = f.type || 'text';
-      input.value = f.value || '';
-      if (f.placeholder) input.placeholder = f.placeholder;
-      wrap.appendChild(input);
-      els.modalBody.appendChild(wrap);
-      modalState.fields.push(input);
-    });
-
-    els.modalOk.textContent = o.confirmText || '确定';
-    els.modalOk.className = 'ghost-btn primary' + (o.danger ? ' danger' : '');
-    els.modalCancel.textContent = o.cancelText || '取消';
-    els.modalCancel.hidden = o.hideCancel === true;
-    els.modalMask.hidden = false;
-
-    setTimeout(() => {
-      if (!modalState) return;
-      if (modalState.fields.length) {
-        modalState.fields[0].focus();
-        modalState.fields[0].select();
-      } else {
-        els.modalOk.focus();
-      }
-    }, 30);
+  li.append(main, more);
+  li.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    openNotebookMenu(nb.id, e.clientX, e.clientY);
   });
-}
 
-function closeModal(result) {
-  if (!modalState) return;
-  const { resolve } = modalState;
-  modalState = null;
-  els.modalMask.hidden = true;
-  els.modalBody.innerHTML = '';
-  resolve(result);
-}
-
-function submitModal() {
-  if (!modalState) return;
-  if (modalState.fields.length) {
-    closeModal(modalState.fields.map((f) => f.value));
-  } else {
-    closeModal(true);
-  }
-}
-
-/** 确认对话框 → true / false */
-function confirmModal(title, message, opts) {
-  const o = opts || {};
-  return openModal({
-    title,
-    message,
-    confirmText: o.confirmText,
-    cancelText: o.cancelText,
-    danger: o.danger,
-  }).then((r) => r === true);
-}
-
-/** 单行输入对话框 → 去空格后的字符串 / null */
-function promptModal(title, value, opts) {
-  const o = opts || {};
-  return openModal({
-    title,
-    message: o.message,
-    fields: [{
-      label: o.label || '',
-      value: value || '',
-      placeholder: o.placeholder || '',
-    }],
-    confirmText: o.confirmText || '确定',
-  }).then((r) => (r && r[0] ? r[0].trim() : null));
+  return li;
 }
 
 /* =========================================================
-   Markdown 导入（修复版：无 H1 时以文件名建根）
+   笔记本操作
    ========================================================= */
-function parseMarkdownToSections(md) {
-  let lines = String(md || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+function openNotebookMenu(id, x, y) {
+  const nb = state.notebooks.find((n) => n.id === id);
+  if (!nb) return;
+  const active = notesInNotebook(id).length;
+  const trashed = state.notes.filter((n) => n.notebookId === id && n.deletedAt).length;
 
-  // 去掉文件开头的 YAML front matter（--- 开头、含 key: 的块）
-  if (/^\s*---\s*$/.test(lines[0] || '')) {
-    const end = lines.findIndex((l, i) => i > 0 && /^\s*(---|\.\.\.)\s*$/.test(l));
-    const body = end > 0 ? lines.slice(1, end) : [];
-    if (end > 0 && body.some((l) => /^\s*[\w-]+\s*:/.test(l))) {
-      lines = lines.slice(end + 1);
-    }
-  }
-
-  const sections = [];
-  let current = { level: 0, title: '', lines: [] };
-  let inCodeBlock = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (/^\s*(```|~~~)/.test(line)) {
-      inCodeBlock = !inCodeBlock;
-      current.lines.push(line);
-      continue;
-    }
-
-    if (!inCodeBlock) {
-      // ATX 标题：# 标题 / #标题
-      const atx = line.match(/^\s*(#{1,6})\s*([^#\s].*?)\s*#*\s*$/);
-      if (atx) {
-        sections.push(current);
-        current = { level: atx[1].length, title: atx[2].trim(), lines: [] };
-        continue;
-      }
-
-      // Setext 标题：标题下一行是 === 或 ---
-      const next = lines[i + 1];
-      const looksLikeBlock = /^\s*([-*+]|\d+[.)]|>|#|```|~~~)/.test(line);
-      if (next && line.trim() && !looksLikeBlock && /^\s*(=+|-{2,})\s*$/.test(next)) {
-        sections.push(current);
-        current = {
-          level: next.indexOf('=') >= 0 ? 1 : 2,
-          title: line.trim(),
-          lines: [],
-        };
-        i++;
-        continue;
-      }
-    }
-    current.lines.push(line);
-  }
-  sections.push(current);
-  return sections;
+  ui.openCtxMenu(x, y, [
+    { heading: nb.name },
+    { label: '打开', action: () => openNotebook(id) },
+    { label: '重命名…', action: () => renameNotebook(id) },
+    { separator: true },
+    {
+      label: `删除笔记本（${active + trashed} 条笔记）`,
+      danger: true,
+      action: () => deleteNotebook(id),
+    },
+  ]);
 }
 
-function markdownToHtml(md) {
-  const src = (md || '').trim();
-  if (!src) return '';
-  if (typeof marked !== 'undefined') {
-    try {
-      return sanitizeHtml(marked.parse(src, { breaks: true, gfm: true }));
-    } catch (e) {
-      console.warn('marked 解析失败，降级到纯文本', e);
-    }
-  }
-  return src.split(/\n{2,}/).map((p) =>
-    `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
-  ).join('');
+function openNotebook(id) {
+  writeStore(LS_CURRENT_NB, id);
+  location.href = './note.html?nb=' + encodeURIComponent(id);
 }
 
-async function importMarkdownFile(text, fileName) {
-  if (!currentNotebookId) {
-    showToast('请先创建一个笔记本');
-    return;
-  }
-
-  const sections = parseMarkdownToSections(text);
-  const hasContent = sections.some(
-    (s) => s.level > 0 || s.lines.some((l) => l.trim())
-  );
-  if (!hasContent) {
-    showToast('文件是空的，没有可导入的内容');
-    return;
-  }
-
-  const fileNameBase = String(fileName || '')
-    .replace(/\.(md|markdown|txt)$/i, '')
-    .trim();
-
-  const existingRoots = notes.filter(
-    (n) => n.notebookId === currentNotebookId && !n.parentId && !n.deletedAt
-  );
-  let orderCounter = existingRoots.length
-    ? Math.max(...existingRoots.map((n) => n.order ?? 0)) + 1
-    : 0;
-
-  const created = [];
-  const stack = []; // stack[level] = note；H1 位于 stack[1]
-
-  // 找第一个标题
-  const firstHeadingIdx = sections.findIndex((s) => s.level > 0);
-  const firstHeading = firstHeadingIdx >= 0 ? sections[firstHeadingIdx] : null;
-
-  // 没有标题，或第一个标题不是 H1 → 用文件名创建一个根节点
-  const needRoot = !firstHeading || firstHeading.level > 1;
-
-  // 收集第一个标题之前的正文
-  const preLines = [];
-  if (firstHeadingIdx > 0) {
-    for (let i = 0; i < firstHeadingIdx; i++) preLines.push(...sections[i].lines);
-  } else if (firstHeadingIdx < 0) {
-    for (const s of sections) preLines.push(...s.lines);
-  }
-  const preContent = preLines.join('\n').trim();
-
-  if (needRoot) {
-    const rootNote = {
-      id: genId(),
-      notebookId: currentNotebookId,
-      parentId: null,
-      order: orderCounter++,
-      title: fileNameBase || '导入的文件',
-      content: markdownToHtml(preContent),
-      tags: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    created.push(rootNote);
-    stack[1] = rootNote;
-  } else if (preContent) {
-    // 一级标题之前还有正文，并入第一个一级标题，避免内容丢失
-    sections[firstHeadingIdx].lines.unshift(...preLines);
-  }
-
-  // 处理所有标题
-  for (const sec of sections) {
-    if (sec.level === 0) continue;
-
-    let parentId = null;
-    for (let i = sec.level - 1; i >= 1; i--) {
-      if (stack[i]) { parentId = stack[i].id; break; }
-    }
-
-    const html = markdownToHtml(sec.lines.join('\n'));
-    const note = {
-      id: genId(),
-      notebookId: currentNotebookId,
-      parentId,
-      order: orderCounter++,
-      title: sec.title || '未命名',
-      content: html,
-      tags: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    created.push(note);
-
-    stack.length = sec.level;
-    stack[sec.level] = note;
-  }
-
-  if (!created.length) {
-    showToast('文件里没有可导入的内容');
-    return;
-  }
-
-  await DB.bulkPutNotes(created);
-  notes.push(...created);
-
-  renderList();
-  selectNote(created[0].id);
-
-  const rootTitle = created[0].title || '未命名';
-  showToast(`已导入 ${created.length} 条笔记，父笔记「${rootTitle}」`);
-}
-
-/* =========================================================
-   笔记本
-   ========================================================= */
-function renderNotebookSelect() {
-  els.notebookSelect.innerHTML = '';
-  notebooks
-    .slice()
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .forEach((nb) => {
-      const opt = document.createElement('option');
-      opt.value = nb.id;
-      opt.textContent = nb.name;
-      els.notebookSelect.appendChild(opt);
-    });
-  if (currentNotebookId) els.notebookSelect.value = currentNotebookId;
-
-  const delBtn = els.notebookDropdown.querySelector('button[data-action="delete"]');
-  if (delBtn) delBtn.disabled = notebooks.length <= 1;
-}
-
-async function createNotebook() {
-  const name = await promptModal('新建笔记本', '新笔记本', {
+async function createNotebookFlow() {
+  const name = await ui.promptModal('新建笔记本', '新笔记本', {
     label: '笔记本名称',
     confirmText: '创建',
   });
   if (name === null) return;
-  if (!name) { showToast('名称不能为空'); return; }
+  if (!name) { ui.toast('名称不能为空'); return; }
 
-  const nb = {
-    id: genNbId(),
-    name,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-  notebooks.push(nb);
-  await DB.putNotebook(nb);
-  renderNotebookSelect();
-  switchNotebook(nb.id);
-  showToast(`已创建笔记本「${name}」`);
+  const nb = await createNotebook(name);
+  renderGrid();
+  openNotebook(nb.id);          // 创建后直接进入笔记页
 }
 
-async function renameNotebook() {
-  if (!currentNotebookId) return;
-  const nb = notebooks.find((n) => n.id === currentNotebookId);
+async function renameNotebook(id) {
+  const nb = state.notebooks.find((n) => n.id === id);
   if (!nb) return;
 
-  const name = await promptModal('重命名笔记本', nb.name, {
+  const name = await ui.promptModal('重命名笔记本', nb.name, {
     label: '笔记本名称',
     confirmText: '重命名',
   });
-  if (name === null) return;
-  if (!name || name === nb.name) return;
+  if (name === null || !name || name === nb.name) return;
 
-  const oldName = nb.name;
+  const old = nb.name;
   nb.name = name;
   nb.updatedAt = Date.now();
-  await DB.putNotebook(nb);
-  renderNotebookSelect();
-  showToast(`已从「${oldName}」重命名为「${name}」`);
+  await saveNotebook(nb);
+  renderGrid();
+  ui.toast(`已从「${old}」重命名为「${name}」`);
 }
 
-async function deleteNotebook() {
-  if (!currentNotebookId) return;
-  if (notebooks.length <= 1) {
-    showToast('至少保留一个笔记本');
-    return;
-  }
-
-  const nb = notebooks.find((n) => n.id === currentNotebookId);
+async function deleteNotebook(id) {
+  const nb = state.notebooks.find((n) => n.id === id);
   if (!nb) return;
 
-  const toDelete = notes.filter((n) => n.notebookId === currentNotebookId);
-  const count = toDelete.length;
+  const active = notesInNotebook(id).length;
+  const trashed = state.notes.filter((n) => n.notebookId === id && n.deletedAt).length;
+  const total = active + trashed;
 
-  const msg = count > 0
-    ? `删除笔记本「${nb.name}」？\n其中 ${count} 条笔记也会被永久删除，此操作不可恢复。`
-    : `删除笔记本「${nb.name}」？`;
-  if (!(await confirmModal('删除笔记本', msg, { confirmText: '删除', danger: true }))) return;
-
-  notes = notes.filter((n) => n.notebookId !== currentNotebookId);
-  notebooks = notebooks.filter((n) => n.id !== currentNotebookId);
-
-  if (toDelete.length) {
-    await DB.bulkDelNotes(toDelete.map((n) => n.id));
-  }
-  await DB.delNotebook(nb.id);
-
-  currentNotebookId = notebooks[0].id;
-  localStorage.setItem('current_notebook', currentNotebookId);
-  renderNotebookSelect();
-  showEmpty();
-  renderList();
-  showToast(`已删除笔记本「${nb.name}」`);
-}
-
-function switchNotebook(id) {
-  flushSave();
-  currentNotebookId = id;
-  localStorage.setItem('current_notebook', id);
-  currentId = null;
-  showEmpty();
-  renderList();
-}
-
-/* =========================================================
-   标签
-   ========================================================= */
-function getAllTags() {
-  const map = new Map();
-  notes.forEach((n) => {
-    if (n.deletedAt) return;
-    (n.tags || []).forEach((raw) => {
-      const name = String(raw || '').trim();
-      if (!name) return;
-      map.set(name, (map.get(name) || 0) + 1);
-    });
-  });
-  return [...map.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
-}
-
-function tagUsage(name) {
-  return notes.filter((n) => !n.deletedAt && (n.tags || []).includes(name)).length;
-}
-
-function refreshTagsInput() {
-  const note = notes.find((n) => n.id === currentId);
-  if (note) els.tagsInput.value = (note.tags || []).join(', ');
-}
-
-/** 批量改标签名：同步所有使用该标签的笔记 */
-async function renameTagEverywhere(oldName, newName) {
-  const touched = [];
-  notes.forEach((n) => {
-    if (n.deletedAt) return;
-    const tags = n.tags || [];
-    if (!tags.includes(oldName)) return;
-    n.tags = [...new Set(tags.map((t) => (t === oldName ? newName : t)))];
-    n.updatedAt = Date.now();
-    touched.push(n);
-  });
-
-  if (touched.length) await DB.bulkPutNotes(touched);
-
-  refreshTagsInput();
-  renderList();
-  renderTagPicker();
-  if (currentView === 'settings') renderTagManageList();
-  return touched.length;
-}
-
-/** 批量移除标签（笔记本身保留） */
-async function removeTagEverywhere(name) {
-  const touched = [];
-  notes.forEach((n) => {
-    if (n.deletedAt) return;
-    const tags = n.tags || [];
-    if (!tags.includes(name)) return;
-    n.tags = tags.filter((t) => t !== name);
-    n.updatedAt = Date.now();
-    touched.push(n);
-  });
-
-  if (touched.length) await DB.bulkPutNotes(touched);
-
-  refreshTagsInput();
-  renderList();
-  renderTagPicker();
-  if (currentView === 'settings') renderTagManageList();
-  return touched.length;
-}
-
-async function askRenameTag(oldName) {
-  const usage = tagUsage(oldName);
-  const next = await promptModal('重命名标签', oldName, {
-    message: usage
-      ? `「${oldName}」正在被 ${usage} 条笔记使用。改名后会同步更新这 ${usage} 条笔记的标签。`
-      : `重命名标签「${oldName}」。`,
-    label: '新标签名',
-    confirmText: '改名',
-  });
-  if (next === null) return;
-  if (!next) { showToast('标签名不能为空'); return; }
-  if (next === oldName) return;
-
-  const willMerge = getAllTags().some((t) => t.name === next);
-  if (willMerge) {
-    const ok = await confirmModal(
-      '合并标签？',
-      `已经存在标签「${next}」，继续会把「${oldName}」合并进它（影响 ${usage} 条笔记）。`,
-      { confirmText: '合并' }
-    );
-    if (!ok) return;
-  }
-
-  const count = await renameTagEverywhere(oldName, next);
-  showToast(`已把「${oldName}」改为「${next}」，同步 ${count} 条笔记`);
-}
-
-async function askDeleteTag(name) {
-  const usage = tagUsage(name);
-  const ok = await confirmModal(
-    '删除标签',
-    `从 ${usage} 条笔记中移除标签「${name}」？笔记本身不会被删除。`,
+  const ok = await ui.confirmModal(
+    '删除笔记本',
+    `删除笔记本「${nb.name}」？\n该笔记本下共 ${total} 条笔记（其中回收站 ${trashed} 条）将被永久删除，此操作不可恢复。`,
     { confirmText: '删除', danger: true }
   );
   if (!ok) return;
 
-  const count = await removeTagEverywhere(name);
-  showToast(`已删除标签「${name}」，更新 ${count} 条笔记`);
-}
+  await deleteNotebookCascade(id);
 
-function openTagMenu(name, x, y) {
-  openCtxMenu(x, y, [
-    { heading: `标签「${name}」` },
-    { label: '重命名标签…', action: () => askRenameTag(name) },
-    { separator: true },
-    { label: '删除标签（保留笔记）', danger: true, action: () => askDeleteTag(name) },
-  ]);
-}
+  // 至少保留一个笔记本
+  if (!state.notebooks.length) await createNotebook(DEFAULT_NOTEBOOK_NAME);
 
-/** 设置页里的标签列表 */
-function renderTagManageList() {
-  const list = getAllTags();
-  els.tagManageList.innerHTML = '';
-
-  if (!list.length) {
-    const li = document.createElement('li');
-    li.className = 'tag-manage-empty';
-    li.textContent = '还没有标签。在笔记的「标签」面板里添加后，会出现在这里。';
-    els.tagManageList.appendChild(li);
-    return;
+  if (readStore(LS_CURRENT_NB, '') === id) {
+    writeStore(LS_CURRENT_NB, state.notebooks[0].id);
   }
 
-  const frag = document.createDocumentFragment();
-  list.forEach((tag) => {
-    const li = document.createElement('li');
-    li.className = 'tag-manage-item';
-
-    const name = document.createElement('span');
-    name.className = 'tag-manage-name';
-    name.textContent = tag.name;
-
-    const count = document.createElement('span');
-    count.className = 'tag-manage-count';
-    count.textContent = `${tag.count} 条笔记`;
-
-    const more = document.createElement('button');
-    more.className = 'ghost-btn small';
-    more.textContent = '⋯';
-    more.setAttribute('aria-label', '标签操作');
-    more.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const r = more.getBoundingClientRect();
-      openTagMenu(tag.name, r.left, r.bottom + 4);
-    });
-
-    li.append(name, count, more);
-    li.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      openTagMenu(tag.name, e.clientX, e.clientY);
-    });
-    frag.appendChild(li);
-  });
-  els.tagManageList.appendChild(frag);
-}
-
-/** 标签面板里的「选择已有标签」列表 */
-function renderTagPicker() {
-  const picker = els.tagPicker;
-  const chosen = new Set(parseTags(els.tagsInput.value));
-  const list = getAllTags();
-  picker.innerHTML = '';
-
-  if (!list.length) {
-    const empty = document.createElement('div');
-    empty.className = 'tag-picker-empty';
-    empty.textContent = '还没有已有标签，可以从下面新建一个。';
-    picker.appendChild(empty);
-  }
-
-  list.forEach((tag) => {
-    const row = document.createElement('div');
-    row.className = 'tag-row';
-
-    const check = document.createElement('span');
-    check.className = 'tag-check';
-    check.textContent = chosen.has(tag.name) ? '✓' : '';
-
-    const name = document.createElement('span');
-    name.className = 'tag-name';
-    name.textContent = tag.name;
-
-    const count = document.createElement('span');
-    count.className = 'tag-count';
-    count.textContent = tag.count;
-
-    row.append(check, name, count);
-    row.addEventListener('click', () => toggleTagInInput(tag.name, row));
-    row.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      openTagMenu(tag.name, e.clientX, e.clientY);
-    });
-    picker.appendChild(row);
-  });
-
-  const newRow = document.createElement('div');
-  newRow.className = 'tag-row new-tag';
-  newRow.textContent = '＋ 新建标签';
-  newRow.addEventListener('click', createTagFromPicker);
-  picker.appendChild(newRow);
-}
-
-function toggleTagInInput(name, row) {
-  const tags = parseTags(els.tagsInput.value);
-  const idx = tags.indexOf(name);
-  if (idx >= 0) tags.splice(idx, 1);
-  else tags.push(name);
-
-  els.tagsInput.value = tags.join(', ');
-  scheduleSave();
-
-  const check = row && row.querySelector('.tag-check');
-  if (check) check.textContent = tags.includes(name) ? '✓' : '';
-}
-
-async function createTagFromPicker() {
-  const name = await promptModal('新建标签', '', {
-    message: '新标签会添加到当前笔记。',
-    label: '标签名',
-    placeholder: '如：读书笔记',
-    confirmText: '创建',
-  });
-  if (name === null) return;
-  if (!name) { showToast('标签名不能为空'); return; }
-
-  const tags = parseTags(els.tagsInput.value);
-  if (!tags.includes(name)) {
-    tags.push(name);
-    els.tagsInput.value = tags.join(', ');
-    scheduleSave();
-  }
-  renderTagPicker();
-  showToast(`已添加标签「${name}」`);
-}
-
-function openTagPanel() {
-  renderTagPicker();
-  els.tagPanel.hidden = false;
-  els.tagBtn.textContent = '标签 ▴';
-  els.tagBtn.setAttribute('aria-expanded', 'true');
-}
-
-function closeTagPanel() {
-  els.tagPanel.hidden = true;
-  els.tagPicker.hidden = true;
-  els.tagBtn.textContent = '标签 ▾';
-  els.tagBtn.setAttribute('aria-expanded', 'false');
+  renderGrid();
+  ui.toast(`已删除笔记本「${nb.name}」（${total} 条笔记）`);
 }
 
 /* =========================================================
-   列表 / 树渲染
+   文件：导出 / 导入 / 清空
    ========================================================= */
-function renderList() {
-  const q = els.searchInput.value.trim().toLowerCase();
-
-  if (!currentNotebookId) {
-    els.noteList.innerHTML = '<li class="note-list-empty">没有笔记本</li>';
-    return;
-  }
-
-  const inNotebook = notes.filter(
-    (n) => n.notebookId === currentNotebookId && !n.deletedAt
-  );
-
-  if (q) {
-    const matched = inNotebook.filter((n) => {
-      const inTitle = (n.title || '').toLowerCase().includes(q);
-      const inBody = (n.content || '').toLowerCase().includes(q);
-      const inTags = (n.tags || []).some((t) => t.toLowerCase().includes(q));
-      return inTitle || inBody || inTags;
-    });
-
-    els.noteList.innerHTML = '';
-    if (!matched.length) {
-      els.noteList.innerHTML = '<li class="note-list-empty">没有匹配的笔记</li>';
-      return;
-    }
-    const frag = document.createDocumentFragment();
-    matched.forEach((n) => frag.appendChild(buildFlatItem(n, 0)));
-    els.noteList.appendChild(frag);
-    return;
-  }
-
-  const { byParent, byId } = buildIndexes();
-  const inNbSet = new Set(inNotebook.map((n) => n.id));
-
-  // 根节点：无 parentId，或 parentId 不在当前笔记本有效集合内
-  const root = inNotebook.filter((n) => {
-    if (!n.parentId) return true;
-    if (!byId.has(n.parentId)) return true;
-    if (!inNbSet.has(n.parentId)) return true;
-    return false;
-  });
-  root.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
-  els.noteList.innerHTML = '';
-
-  if (!root.length) {
-    els.noteList.innerHTML = '<li class="note-list-empty">还没有笔记</li>';
-    return;
-  }
-
-  const frag = document.createDocumentFragment();
-  root.forEach((n) => renderTreeNode(n, 0, frag, byParent, inNbSet));
-  els.noteList.appendChild(frag);
+function targetNotebookId() {
+  const saved = readStore(LS_CURRENT_NB, '');
+  const list = sortedNotebooks();
+  if (list.some((nb) => nb.id === saved)) return saved;
+  return list.length ? list[0].id : null;
 }
 
-function buildFlatItem(note, depth) {
-  const li = document.createElement('li');
-  li.className = 'note-item' + (note.id === currentId ? ' active' : '');
-  li.dataset.id = note.id;
-  li.style.paddingLeft = (10 + depth * 14) + 'px';
-
-  const row = document.createElement('div');
-  row.className = 'ni-row';
-
-  const arrow = document.createElement('span');
-  arrow.className = 'ni-arrow';
-  arrow.textContent = '';
-
-  const title = document.createElement('span');
-  title.className = 'ni-title';
-  title.textContent = note.title || '无标题';
-
-  row.append(arrow, title);
-  li.appendChild(row);
-
-  li.addEventListener('click', () => selectNote(note.id));
-  bindNoteContextMenu(li, note);
-  return li;
-}
-
-/** 右键笔记 → 操作菜单 */
-function bindNoteContextMenu(li, note) {
-  li.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openNoteMenu(note.id, e.clientX, e.clientY);
-  });
-}
-
-function openNoteMenu(id, x, y) {
-  const note = notes.find((n) => n.id === id && !n.deletedAt);
-  if (!note) return;
-
-  const childCount = notes.filter((n) => n.parentId === id && !n.deletedAt).length;
-  openCtxMenu(x, y, [
-    { heading: (note.title || '无标题') + (childCount ? `（${childCount} 条子笔记）` : '') },
-    { label: '新建子笔记', action: () => createNote(id) },
-    { label: '重命名笔记…', action: () => renameNote(id) },
-    { separator: true },
-    { label: '删除笔记（移入回收站）', danger: true, action: () => softDeleteNote(id) },
-  ]);
-}
-
-function renderTreeNode(note, depth, container, byParent, inNbSet) {
-  const children = (byParent.get(note.id) || []).filter((n) => inNbSet.has(n.id));
-  const hasChildren = children.length > 0;
-  const collapsed = collapsedIds.has(note.id);
-
-  const li = document.createElement('li');
-  li.className = 'note-item' + (note.id === currentId ? ' active' : '');
-  if (hasChildren) li.classList.add('has-children');
-  li.dataset.id = note.id;
-  li.draggable = true;
-  li.style.paddingLeft = (10 + depth * 14) + 'px';
-
-  const row = document.createElement('div');
-  row.className = 'ni-row';
-
-  const arrow = document.createElement('span');
-  arrow.className = 'ni-arrow' + (hasChildren ? ' has-children' : '');
-  if (hasChildren) {
-    arrow.textContent = collapsed ? '▸' : '▾';
-    arrow.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleCollapse(note.id);
-    });
-  } else {
-    arrow.textContent = '';
-  }
-
-  const title = document.createElement('span');
-  title.className = 'ni-title';
-  title.textContent = note.title || '无标题';
-
-  row.append(arrow, title);
-  li.appendChild(row);
-
-  li.addEventListener('click', () => selectNote(note.id));
-  bindNoteContextMenu(li, note);
-
-  li.addEventListener('dragstart', (e) => {
-    dragState = { id: note.id };
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', note.id); } catch (_) {}
-    li.classList.add('dragging');
-  });
-
-  li.addEventListener('dragend', () => {
-    dragState = null;
-    dropTarget = null;
-    li.classList.remove('dragging');
-    clearDropIndicators();
-    els.trashBtn.classList.remove('drag-over');
-  });
-
-  li.addEventListener('dragover', (e) => {
-    if (!dragState) return;
-    if (dragState.id === note.id) return;
-
-    const { byId } = buildIndexes();
-    if (isDescendantOf(note.id, dragState.id, byId)) return;
-
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    const rect = li.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const h = rect.height;
-
-    let position;
-    if (y < h * 0.25) position = 'before';
-    else if (y > h * 0.75) position = 'after';
-    else position = 'inside';
-
-    if (!canDrop(dragState.id, note.id, position)) return;
-
-    clearDropIndicators();
-    li.classList.add('drop-' + position);
-    dropTarget = { id: note.id, position };
-  });
-
-  li.addEventListener('dragleave', (e) => {
-    if (!li.contains(e.relatedTarget)) {
-      li.classList.remove('drop-before', 'drop-after', 'drop-inside');
-    }
-  });
-
-  li.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    if (!dragState || !dropTarget) return;
-    const { id: draggedId } = dragState;
-    const { id: targetId, position } = dropTarget;
-    dragState = null;
-    dropTarget = null;
-    clearDropIndicators();
-    await moveNote(draggedId, targetId, position);
-  });
-
-  container.appendChild(li);
-
-  if (hasChildren && !collapsed) {
-    children.forEach((c) => renderTreeNode(c, depth + 1, container, byParent, inNbSet));
-  }
-}
-
-function clearDropIndicators() {
-  els.noteList.querySelectorAll('.drop-before, .drop-after, .drop-inside')
-    .forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-inside'));
-}
-
-function toggleCollapse(id) {
-  if (collapsedIds.has(id)) collapsedIds.delete(id);
-  else collapsedIds.add(id);
-  renderList();
-}
-
-/* =========================================================
-   拖拽移动
-   ========================================================= */
-function canDrop(draggedId, targetId, position) {
-  const { byId, byParent } = buildIndexes();
-  const target = byId.get(targetId);
-  if (!target) return false;
-
-  const draggedHeight = getSubtreeHeight(draggedId, byParent);
-  let newDepth;
-
-  if (position === 'inside') {
-    newDepth = getDepth(targetId, byId) + 1;
-  } else {
-    const parent = target.parentId;
-    newDepth = parent ? getDepth(parent, byId) + 1 : 0;
-  }
-
-  return newDepth + draggedHeight <= MAX_DEPTH;
-}
-
-async function moveNote(draggedId, targetId, position) {
-  const dragged = notes.find((n) => n.id === draggedId);
-  const target = notes.find((n) => n.id === targetId);
-  if (!dragged || !target) return;
-  if (dragged.id === target.id) return;
-
-  const { byId } = buildIndexes();
-  if (isDescendantOf(targetId, draggedId, byId)) return;
-
-  let newParentId;
-  let newOrder;
-
-  if (position === 'inside') {
-    newParentId = targetId;
-    const siblings = notes
-      .filter((n) => n.parentId === targetId && n.id !== draggedId && !n.deletedAt)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    newOrder = siblings.length ? (siblings[siblings.length - 1].order ?? 0) + 1 : 0;
-  } else {
-    newParentId = target.parentId || null;
-    const siblings = notes
-      .filter((n) => n.parentId === newParentId && n.id !== draggedId && !n.deletedAt)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    const idx = siblings.findIndex((n) => n.id === targetId);
-
-    if (idx < 0) {
-      newOrder = siblings.length ? (siblings[siblings.length - 1].order ?? 0) + 1 : 0;
-    } else if (position === 'before') {
-      const prev = siblings[idx - 1];
-      const curr = siblings[idx];
-      newOrder = prev
-        ? ((prev.order ?? 0) + (curr.order ?? 0)) / 2
-        : (curr.order ?? 0) - 1;
-    } else {
-      const curr = siblings[idx];
-      const next = siblings[idx + 1];
-      newOrder = next
-        ? ((curr.order ?? 0) + (next.order ?? 0)) / 2
-        : (curr.order ?? 0) + 1;
-    }
-  }
-
-  dragged.parentId = newParentId;
-  dragged.order = newOrder;
-  dragged.updatedAt = Date.now();
-  await DB.putNote(dragged);
-
-  if (newParentId && collapsedIds.has(newParentId)) collapsedIds.delete(newParentId);
-
-  renderList();
-}
-
-/* =========================================================
-   保存逻辑
-   ========================================================= */
-function scheduleSave() {
-  if (!currentId) return;
-  els.saveStatus.textContent = '编辑中…';
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    saveNow();
-  }, 600);
-}
-
-async function saveNow() {
-  if (!currentId) return;
-  const id = currentId;
-  const note = notes.find((n) => n.id === id);
-  if (!note || note.deletedAt) return;
-
-  note.title = els.titleInput.value;
-  note.content = els.contentInput.innerHTML;
-  note.tags = parseTags(els.tagsInput.value);
-  note.updatedAt = Date.now();
-
-  try {
-    await DB.putNote(note);
-  } catch (err) {
-    console.error('保存失败', err);
-    els.saveStatus.textContent = '保存失败';
-    return;
-  }
-
-  renderList();
-  if (currentId === id) renderSaveStatus(note.updatedAt);
-}
-
-function flushSave() {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-    saveNow();
-  }
-}
-
-/* =========================================================
-   视图切换
-   ========================================================= */
-function hideMainViews() {
-  els.emptyState.hidden = true;
-  els.editor.hidden = true;
-  els.trashView.hidden = true;
-  els.settingsView.hidden = true;
-  els.trashBtn.classList.remove('active');
-  els.settingsBtn.classList.remove('active');
-}
-
-function showEmpty() {
-  currentId = null;
-  currentView = 'notes';
-  hideMainViews();
-  els.emptyState.hidden = false;
-  els.breadcrumb.innerHTML = '';
-  hideFmtToolbar();
-  closeTagPanel();
-}
-
-function showTrashView() {
-  flushSave();
-  if (currentId) lastSelectedId = currentId;
-  currentId = null;
-  currentView = 'trash';
-  hideMainViews();
-  els.trashView.hidden = false;
-  els.trashBtn.classList.add('active');
-  hideFmtToolbar();
-  closeTagPanel();
-  renderTrash();
-}
-
-function showSettingsView() {
-  flushSave();
-  if (currentId) lastSelectedId = currentId;
-  currentId = null;
-  currentView = 'settings';
-  hideMainViews();
-  els.settingsView.hidden = false;
-  els.settingsBtn.classList.add('active');
-  hideFmtToolbar();
-  closeTagPanel();
-  renderTagManageList();
-}
-
-function showNotesView() {
-  currentView = 'notes';
-  els.trashView.hidden = true;
-  els.settingsView.hidden = true;
-  els.trashBtn.classList.remove('active');
-  els.settingsBtn.classList.remove('active');
-  if (lastSelectedId) {
-    const note = notes.find((n) => n.id === lastSelectedId && !n.deletedAt);
-    if (note) { selectNote(lastSelectedId); return; }
-  }
-
-  // 没有可回到的笔记时，打开当前笔记本的第一条笔记
-  const first = notes
-    .filter((n) => n.notebookId === currentNotebookId && !n.parentId && !n.deletedAt)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0];
-  if (first) { selectNote(first.id); return; }
-
-  showEmpty();
-}
-
-/* =========================================================
-   回收站渲染
-   ========================================================= */
-function renderTrash() {
-  const deleted = notes
-    .filter((n) => n.deletedAt)
-    .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
-
-  els.trashCount.textContent = deleted.length
-    ? `共 ${deleted.length} 条已删除笔记`
-    : '暂无已删除笔记';
-
-  els.emptyTrashBtn.disabled = !deleted.length;
-
-  els.trashList.innerHTML = '';
-
-  if (!deleted.length) {
-    els.trashList.innerHTML = '<li class="trash-empty">回收站是空的</li>';
-    return;
-  }
-
-  const frag = document.createDocumentFragment();
-  for (const note of deleted) {
-    const li = document.createElement('li');
-    li.className = 'trash-item';
-
-    const info = document.createElement('div');
-    info.className = 'trash-info';
-
-    const title = document.createElement('div');
-    title.className = 'trash-title';
-    title.textContent = note.title || '无标题';
-
-    const meta = document.createElement('div');
-    meta.className = 'trash-meta';
-    const when = note.deletedAt ? formatTime(note.deletedAt) : '未知';
-    const childCount = notes.filter((n) => n.parentId === note.id && n.deletedAt).length;
-    meta.textContent = `删除于 ${when}` + (childCount ? ` · 含 ${childCount} 条子笔记` : '');
-
-    info.append(title, meta);
-
-    const actions = document.createElement('div');
-    actions.className = 'trash-actions';
-
-    const restoreBtn = document.createElement('button');
-    restoreBtn.className = 'ghost-btn small';
-    restoreBtn.textContent = '还原';
-    restoreBtn.addEventListener('click', () => restoreNote(note.id));
-
-    const delBtn = document.createElement('button');
-    delBtn.className = 'ghost-btn small danger';
-    delBtn.textContent = '永久删除';
-    delBtn.addEventListener('click', () => permanentDelete(note.id));
-
-    actions.append(restoreBtn, delBtn);
-    li.append(info, actions);
-    frag.appendChild(li);
-  }
-  els.trashList.appendChild(frag);
-}
-
-/* =========================================================
-   回收站操作
-   ========================================================= */
-async function softDeleteNote(id) {
-  const note = notes.find((n) => n.id === id);
-  if (!note || note.deletedAt) return;
-
-  const subtree = collectSubtree(id).filter((n) => !n.deletedAt);
-  if (!subtree.length) return;
-
-  const now = Date.now();
-  subtree.forEach((n) => {
-    n.deletedAt = now;
-    n.updatedAt = now;
-  });
-
-  // 若当前编辑的就是被删除的，关闭编辑器
-  if (currentId && subtree.some((n) => n.id === currentId)) {
-    showEmpty();
-  }
-
-  await DB.bulkPutNotes(subtree);
-  renderList();
-
-  lastDeletedIds = subtree.map((n) => n.id);
-
-  const title = note.title || '无标题';
-  const extra = subtree.length > 1 ? `及 ${subtree.length - 1} 条子笔记` : '';
-  showToast(`已移入回收站「${title}」${extra}`, '撤销', undoSoftDelete);
-}
-
-async function undoSoftDelete() {
-  if (!lastDeletedIds || !lastDeletedIds.length) return;
-  const ids = new Set(lastDeletedIds);
-  lastDeletedIds = null;
-
-  const toRestore = notes.filter((n) => ids.has(n.id) && n.deletedAt);
-  const now = Date.now();
-  toRestore.forEach((n) => {
-    delete n.deletedAt;
-    n.updatedAt = now;
-  });
-
-  await DB.bulkPutNotes(toRestore);
-  hideToast();
-  renderList();
-
-  if (toRestore.length) selectNote(toRestore[0].id);
-}
-
-async function restoreNote(id) {
-  const note = notes.find((n) => n.id === id);
-  if (!note || !note.deletedAt) return;
-
-  // 收集自己 + 已删除的后代
-  const subtree = collectSubtree(id).filter((n) => n.deletedAt);
-
-  // 如果父节点已删除或不存在，则作为根节点存在
-  if (note.parentId) {
-    const parent = notes.find((n) => n.id === note.parentId);
-    if (!parent || parent.deletedAt) {
-      note.parentId = null;
-      // 放到当前笔记本根节点最后
-      const roots = notes.filter(
-        (n) => n.notebookId === note.notebookId && !n.parentId && !n.deletedAt
-      );
-      note.order = roots.length ? Math.max(...roots.map((r) => r.order ?? 0)) + 1 : 0;
-    }
-  }
-
-  const now = Date.now();
-  subtree.forEach((n) => {
-    delete n.deletedAt;
-    n.updatedAt = now;
-  });
-
-  await DB.bulkPutNotes(subtree);
-  renderTrash();
-  renderList();
-
-  showToast(`已还原 ${subtree.length} 条笔记`);
-}
-
-async function permanentDelete(id) {
-  const note = notes.find((n) => n.id === id);
-  if (!note || !note.deletedAt) return;
-
-  const subtree = collectSubtree(id);
-  const ids = subtree.map((n) => n.id);
-
-  const ok = await confirmModal(
-    '永久删除',
-    `永久删除「${note.title || '无标题'}」及其全部子笔记（共 ${ids.length} 条）？此操作不可恢复。`,
-    { confirmText: '永久删除', danger: true }
-  );
-  if (!ok) return;
-
-  const idSet = new Set(ids);
-  notes = notes.filter((n) => !idSet.has(n.id));
-
-  await DB.bulkDelNotes(ids);
-  renderTrash();
-  renderList();
-  showToast(`已永久删除 ${ids.length} 条笔记`);
-}
-
-async function emptyTrash() {
-  const deleted = notes.filter((n) => n.deletedAt);
-  if (!deleted.length) {
-    showToast('回收站已经是空的');
-    return;
-  }
-
-  const ok = await confirmModal(
-    '清空回收站',
-    `永久删除回收站中全部 ${deleted.length} 条笔记？此操作不可恢复。`,
-    { confirmText: '清空回收站', danger: true }
-  );
-  if (!ok) return;
-
-  const ids = deleted.map((n) => n.id);
-  const idSet = new Set(ids);
-  notes = notes.filter((n) => !idSet.has(n.id));
-
-  await DB.bulkDelNotes(ids);
-  renderTrash();
-  renderList();
-  showToast(`已清空回收站（${ids.length} 条）`);
-}
-
-/* =========================================================
-   笔记操作
-   ========================================================= */
-function renderBreadcrumb(note) {
-  const { byId } = buildIndexes();
-  const path = [];
-  let cur = note;
-  let guard = 0;
-  while (cur && guard++ < 100) {
-    path.unshift(cur);
-    cur = cur.parentId ? byId.get(cur.parentId) : null;
-  }
-  els.breadcrumb.innerHTML = '';
-  path.forEach((n, i) => {
-    if (i > 0) {
-      const sep = document.createElement('span');
-      sep.className = 'sep';
-      sep.textContent = '›';
-      els.breadcrumb.appendChild(sep);
-    }
-    const s = document.createElement('span');
-    s.textContent = n.title || '无标题';
-    els.breadcrumb.appendChild(s);
-  });
-}
-
-function setEditorContent(content) {
-  const c = content || '';
-  if (!c) {
-    els.contentInput.innerHTML = '';
-    return;
-  }
-  if (isLikelyHtml(c)) {
-    els.contentInput.innerHTML = sanitizeHtml(c);
-  } else {
-    els.contentInput.innerHTML = c
-      .split(/\n{2,}/)
-      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
-      .join('');
-  }
-}
-
-function selectNote(id) {
-  flushSave();
-
-  const note = notes.find((n) => n.id === id);
-  if (!note || note.deletedAt) { showEmpty(); return; }
-
-  if (note.notebookId !== currentNotebookId) {
-    currentNotebookId = note.notebookId;
-    localStorage.setItem('current_notebook', currentNotebookId);
-    renderNotebookSelect();
-  }
-
-  // 展开祖先
-  let cur = note.parentId ? notes.find((n) => n.id === note.parentId) : null;
-  let guard = 0;
-  while (cur && guard++ < 100) {
-    collapsedIds.delete(cur.id);
-    cur = cur.parentId ? notes.find((n) => n.id === cur.parentId) : null;
-  }
-
-  // 切换出回收站 / 设置视图
-  currentView = 'notes';
-  hideMainViews();
-
-  currentId = id;
-  els.emptyState.hidden = true;
-  els.editor.hidden = false;
-
-  els.titleInput.value = note.title || '';
-  setEditorContent(note.content || '');
-  els.tagsInput.value = (note.tags || []).join(', ');
-
-  renderBreadcrumb(note);
-  renderSaveStatus(note.updatedAt);
-  hideAIResult();
-  hideFmtToolbar();
-  closeTagPanel();
-  renderList();
-}
-
-async function createNote(parentId) {
-  flushSave();
-
-  if (!currentNotebookId) {
-    showToast('请先创建一个笔记本');
-    return;
-  }
-
-  let parent = parentId ? notes.find((n) => n.id === parentId && !n.deletedAt) : null;
-  if (!parent) parentId = null;
-
-  if (parent) {
-    const { byId } = buildIndexes();
-    if (getDepth(parent.id, byId) + 1 > MAX_DEPTH) {
-      showToast(`最多 ${MAX_DEPTH + 1} 层，无法再添加子笔记`);
-      return;
-    }
-  }
-
-  const siblings = notes.filter(
-    (n) => n.notebookId === currentNotebookId &&
-           (n.parentId || null) === (parentId || null) &&
-           !n.deletedAt
-  );
-  const maxOrder = siblings.length
-    ? Math.max(...siblings.map((n) => n.order ?? 0))
-    : -1;
-
-  const note = {
-    id: genId(),
-    notebookId: currentNotebookId,
-    parentId: parentId || null,
-    order: maxOrder + 1,
-    title: '',
-    content: '',
-    tags: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-
-  notes.push(note);
-  await DB.putNote(note);
-
-  if (parentId) collapsedIds.delete(parentId);
-  renderList();
-  selectNote(note.id);
-  els.titleInput.focus();
-}
-
-async function renameNote(id) {
-  const note = notes.find((n) => n.id === id && !n.deletedAt);
-  if (!note) return;
-
-  if (currentId === id) flushSave();
-
-  const name = await promptModal('重命名笔记', note.title || '', {
-    label: '笔记标题',
-    confirmText: '重命名',
-  });
-  if (name === null) return;
-  if (!name) { showToast('标题不能为空'); return; }
-
-  note.title = name;
-  note.updatedAt = Date.now();
-  await DB.putNote(note);
-
-  if (currentId === id) {
-    els.titleInput.value = name;
-    renderBreadcrumb(note);
-    renderSaveStatus(note.updatedAt);
-  }
-  renderList();
-  showToast(`已重命名为「${name}」`);
-}
-
-async function deleteNote() {
-  if (!currentId) return;
-  await softDeleteNote(currentId);
-}
-
-/* =========================================================
-   清空所有数据
-   ========================================================= */
 async function clearAllData() {
-  const first = await confirmModal(
+  const first = await ui.confirmModal(
     '清空所有数据',
     '将删除所有笔记本、笔记（含回收站）和 AI 配置。此操作不可恢复，建议先导出备份。',
     { confirmText: '继续', danger: true }
   );
   if (!first) return;
 
-  const second = await confirmModal(
-    '再次确认',
-    '真的要清空全部数据吗？',
-    { confirmText: '清空', danger: true }
-  );
+  const second = await ui.confirmModal('再次确认', '真的要清空全部数据吗？',
+    { confirmText: '清空', danger: true });
   if (!second) return;
 
-  flushSave();
-
   try {
-    await DB.clearNotes();
-    await DB.clearNotebooks();
-    localStorage.removeItem('ai_base');
-    localStorage.removeItem('ai_model');
-    localStorage.removeItem('ai_key');
-    localStorage.removeItem('current_notebook');
-
-    notes = [];
-    notebooks = [];
-    currentId = null;
-    currentNotebookId = null;
-    lastDeletedIds = null;
-    lastSelectedId = null;
-    collapsedIds.clear();
-
-    const nb = {
-      id: genNbId(),
-      name: '我的笔记',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    notebooks.push(nb);
-    await DB.putNotebook(nb);
-    currentNotebookId = nb.id;
-    localStorage.setItem('current_notebook', nb.id);
-
-    renderNotebookSelect();
-    showEmpty();
-    renderList();
-    hideAIResult();
-
-    els.titleInput.value = '';
-    els.contentInput.innerHTML = '';
-    els.tagsInput.value = '';
-    els.apiBase.value = 'https://api.deepseek.com/v1';
-    els.apiModel.value = 'deepseek-chat';
-    els.apiKey.value = '';
-    els.saveStatus.textContent = '';
-    updateAIBtn();
-
-    hideToast();
-    showToast('已清空所有数据');
+    const nb = await resetAll();
+    writeStore(LS_CURRENT_NB, nb.id);
+    settingsView.render();
+    renderGrid();
+    ui.hideToast();
+    ui.toast('已清空所有数据');
   } catch (err) {
     console.error('清空失败', err);
-    showToast('清空失败：' + err.message);
-  }
-}
-
-/* =========================================================
-   导出 / 导入
-   ========================================================= */
-function exportJSON() {
-  const payload = {
-    app: 'funnotes',
-    version: 3,
-    exportedAt: new Date().toISOString(),
-    notebooks,
-    notes,
-  };
-
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `funnotes-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-
-  const activeCount = notes.filter((n) => !n.deletedAt).length;
-  const trashCount = notes.filter((n) => n.deletedAt).length;
-  showToast(`已导出 ${notebooks.length} 个笔记本、${activeCount} 条笔记（含回收站 ${trashCount} 条）`);
-}
-
-async function importJSON(file) {
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-
-    let incomingNotebooks = [];
-    let incomingNotes = [];
-
-    if (Array.isArray(data)) {
-      incomingNotes = data;
-    } else if (data && typeof data === 'object') {
-      incomingNotebooks = Array.isArray(data.notebooks) ? data.notebooks : [];
-      incomingNotes = Array.isArray(data.notes) ? data.notes : [];
-    }
-
-    if (!incomingNotebooks.length && !incomingNotes.length) {
-      throw new Error('文件里没有可导入的内容');
-    }
-
-    const nbIdMap = new Map();
-    const existingNbIds = new Set(notebooks.map((n) => n.id));
-
-    for (const raw of incomingNotebooks) {
-      if (!raw || typeof raw !== 'object') continue;
-      const id = (typeof raw.id === 'string' && raw.id) ? raw.id : genNbId();
-      const finalId = existingNbIds.has(id) ? genNbId() : id;
-      nbIdMap.set(id, finalId);
-      existingNbIds.add(finalId);
-
-      notebooks.push({
-        id: finalId,
-        name: String(raw.name || '未命名笔记本'),
-        createdAt: Number(raw.createdAt) || Date.now(),
-        updatedAt: Number(raw.updatedAt) || Date.now(),
-      });
-    }
-
-    let fallbackNbId = currentNotebookId;
-    if (!fallbackNbId) {
-      if (!notebooks.length) {
-        const nb = {
-          id: genNbId(),
-          name: '导入的笔记',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        notebooks.push(nb);
-        fallbackNbId = nb.id;
-      } else {
-        fallbackNbId = notebooks[0].id;
-      }
-    }
-
-    const existingNoteIds = new Set(notes.map((n) => n.id));
-    const added = [];
-    let skipped = 0;
-
-    for (const raw of incomingNotes) {
-      if (!raw || typeof raw !== 'object') continue;
-
-      const id = (typeof raw.id === 'string' && raw.id) ? raw.id : genId();
-      if (existingNoteIds.has(id)) { skipped++; continue; }
-      existingNoteIds.add(id);
-
-      const oldNbId = raw.notebookId;
-      const newNbId = nbIdMap.get(oldNbId) || fallbackNbId;
-
-      const note = {
-        id,
-        notebookId: newNbId,
-        parentId: raw.parentId || null,
-        order: Number(raw.order) || 0,
-        title: String(raw.title ?? ''),
-        content: String(raw.content ?? ''),
-        tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
-        createdAt: Number(raw.createdAt) || Date.now(),
-        updatedAt: Number(raw.updatedAt) || Date.now(),
-      };
-      if (raw.deletedAt) note.deletedAt = Number(raw.deletedAt);
-      notes.push(note);
-      added.push(note);
-    }
-
-    const addedIds = new Set(added.map((n) => n.id));
-    added.forEach((n) => {
-      if (n.parentId && !addedIds.has(n.parentId) && !existingNoteIds.has(n.parentId)) {
-        n.parentId = null;
-      }
-    });
-
-    for (const nb of notebooks) await DB.putNotebook(nb);
-    if (added.length) await DB.bulkPutNotes(added);
-
-    renderNotebookSelect();
-    renderList();
-    if (currentView === 'trash') renderTrash();
-
-    showToast(
-      `导入完成：新增 ${added.length} 条笔记` +
-      (skipped ? `，跳过 ${skipped} 条重复` : '')
-    );
-  } catch (err) {
-    showToast('导入失败：' + err.message);
-  }
-}
-
-/* =========================================================
-   富文本格式工具栏
-   ========================================================= */
-let savedRange = null;
-
-function showFmtToolbar(x, y) {
-  const sel = window.getSelection();
-  if (sel && sel.rangeCount > 0 && els.contentInput.contains(sel.anchorNode)) {
-    savedRange = sel.getRangeAt(0).cloneRange();
-  }
-
-  const tb = els.fmtToolbar;
-  tb.style.left = '0px';
-  tb.style.top = '0px';
-  tb.hidden = false;
-
-  const rect = tb.getBoundingClientRect();
-  const maxX = window.innerWidth - rect.width - 8;
-  const maxY = window.innerHeight - rect.height - 8;
-  tb.style.left = Math.max(8, Math.min(x, maxX)) + 'px';
-  tb.style.top = Math.max(8, Math.min(y, maxY)) + 'px';
-
-  updateToolbarState();
-}
-
-function hideFmtToolbar() {
-  els.fmtToolbar.hidden = true;
-}
-
-/** 高亮当前光标所在的格式（加粗 / H1 / 正文…） */
-function updateToolbarState() {
-  if (els.fmtToolbar.hidden) return;
-  els.fmtToolbar.querySelectorAll('button').forEach((btn) => {
-    const { cmd, block } = btn.dataset;
-    let active = false;
-    try {
-      if (cmd === 'bold' || cmd === 'italic' || cmd === 'underline' ||
-          cmd === 'strikeThrough' || cmd === 'insertUnorderedList' ||
-          cmd === 'insertOrderedList') {
-        active = document.queryCommandState(cmd);
-      } else if (block) {
-        const v = String(document.queryCommandValue('formatBlock') || '').toLowerCase();
-        active = block === 'p'
-          ? (!v || v === 'p' || v === 'div' || v === 'body')
-          : v === block;
-      }
-    } catch (_) {
-      active = false;
-    }
-    btn.classList.toggle('active', active);
-  });
-}
-
-function restoreSelection() {
-  if (!savedRange) return;
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(savedRange);
-}
-
-function execFmt(cmd, value) {
-  els.contentInput.focus();
-  restoreSelection();
-  try {
-    document.execCommand(cmd, false, value);
-  } catch (e) {
-    console.warn('execCommand 失败', cmd, e);
-  }
-  scheduleSave();
-}
-
-async function insertLink() {
-  const url = await promptModal('插入链接', 'https://', {
-    label: '链接地址',
-    confirmText: '插入',
-  });
-  if (!url) return;
-  execFmt('createLink', url.trim());
-}
-
-async function insertTable() {
-  const values = await openModal({
-    title: '插入表格',
-    message: '输入表格的行数与列数（行数 1–20，列数 1–10）。',
-    fields: [
-      { label: '行数', value: '3' },
-      { label: '列数', value: '3' },
-    ],
-    confirmText: '插入',
-  });
-  if (!values) return;
-
-  const r = Math.max(1, Math.min(20, parseInt(values[0], 10) || 3));
-  const c = Math.max(1, Math.min(10, parseInt(values[1], 10) || 3));
-
-  let html = '<table><tbody>';
-  for (let i = 0; i < r; i++) {
-    html += '<tr>';
-    for (let j = 0; j < c; j++) {
-      html += i === 0 ? '<th>表头</th>' : '<td>内容</td>';
-    }
-    html += '</tr>';
-  }
-  html += '</tbody></table><p><br></p>';
-
-  execFmt('insertHTML', html);
-}
-
-els.fmtToolbar.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  const btn = e.target.closest('button');
-  if (!btn) return;
-
-  const { cmd, block, action } = btn.dataset;
-
-  if (cmd) execFmt(cmd);
-  else if (block) execFmt('formatBlock', `<${block}>`);
-  else if (action === 'clear') {
-    execFmt('removeFormat');
-    execFmt('formatBlock', '<p>');
-  }
-  else if (action === 'link') insertLink();
-  else if (action === 'table') insertTable();
-
-  updateToolbarState();
-});
-
-document.addEventListener('selectionchange', () => {
-  if (!els.fmtToolbar.hidden) updateToolbarState();
-});
-
-els.contentInput.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  showFmtToolbar(e.clientX, e.clientY);
-});
-
-document.addEventListener('mousedown', (e) => {
-  if (els.fmtToolbar.hidden) return;
-  if (els.fmtToolbar.contains(e.target)) return;
-  hideFmtToolbar();
-});
-
-els.contentInput.addEventListener('click', (e) => {
-  const a = e.target.closest('a');
-  if (a && a.href) {
-    e.preventDefault();
-    window.open(a.href, '_blank', 'noopener,noreferrer');
-  }
-});
-
-/* =========================================================
-   AI
-   ========================================================= */
-function loadSettings() {
-  els.apiBase.value = localStorage.getItem('ai_base') || 'https://api.deepseek.com/v1';
-  els.apiModel.value = localStorage.getItem('ai_model') || 'deepseek-chat';
-  els.apiKey.value = localStorage.getItem('ai_key') || '';
-  updateAIBtn();
-}
-
-function saveSettings() {
-  localStorage.setItem('ai_base', els.apiBase.value.trim());
-  localStorage.setItem('ai_model', els.apiModel.value.trim());
-  localStorage.setItem('ai_key', els.apiKey.value.trim());
-  updateAIBtn();
-}
-
-/** 只有配置了 API Key 才显示笔记右上角的 AI 按钮 */
-function updateAIBtn() {
-  const hasKey = !!els.apiKey.value.trim();
-  els.aiBtn.hidden = !hasKey;
-  if (!hasKey) els.aiDropdown.hidden = true;
-}
-
-async function callAI(messages) {
-  const base = (els.apiBase.value.trim() || 'https://api.deepseek.com/v1').replace(/\/+$/, '');
-  const key = els.apiKey.value.trim();
-  const model = els.apiModel.value.trim() || 'deepseek-chat';
-
-  if (!key) throw new Error('请先在「设置」里填入 API Key');
-
-  const res = await fetch(base + '/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + key,
-    },
-    body: JSON.stringify({ model, messages, temperature: 0.3 }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`请求失败（${res.status}）${text.slice(0, 160)}`);
-  }
-
-  const data = await res.json();
-  return (data && data.choices && data.choices[0] &&
-          data.choices[0].message && data.choices[0].message.content || '').trim();
-}
-
-function setAILoading(which) {
-  const busy = !!which;
-  els.aiBtn.disabled = busy;
-  els.aiBtn.textContent = busy ? 'AI 处理中…' : 'AI ▾';
-  if (busy) els.aiDropdown.hidden = true;
-}
-
-function showAIResult(title, body, mode) {
-  els.aiResultTitle.textContent = title;
-  els.aiResultBody.textContent = body;
-  els.aiInsertBtn.hidden = mode !== 'append';
-  aiResultMode = mode;
-  els.aiResult.hidden = false;
-}
-
-function hideAIResult() {
-  els.aiResult.hidden = true;
-  aiResultMode = null;
-}
-
-function insertAIResult() {
-  if (aiResultMode !== 'append') return;
-  const text = els.aiResultBody.textContent.trim();
-  if (!text) return;
-
-  const html = '<p>--- AI 总结 ---</p><pre>' + escapeHtml(text) + '</pre>';
-
-  els.contentInput.focus();
-  const sel = window.getSelection();
-  const range = document.createRange();
-  range.selectNodeContents(els.contentInput);
-  range.collapse(false);
-  sel.removeAllRanges();
-  sel.addRange(range);
-
-  document.execCommand('insertHTML', false, html);
-  scheduleSave();
-  hideAIResult();
-}
-
-function getEditorPlainText() {
-  return (els.contentInput.innerText || els.contentInput.textContent || '').trim();
-}
-
-async function runAISummary() {
-  const content = getEditorPlainText();
-  if (!content) { showToast('笔记还是空的，先写点内容'); return; }
-
-  setAILoading('summary');
-  hideAIResult();
-
-  try {
-    const result = await callAI([
-      { role: 'system', content: '你是一个笔记助手。请用中文简洁总结用户的笔记，输出 3-5 条要点，每条以短横线开头，不要寒暄。' },
-      { role: 'user', content },
-    ]);
-    showAIResult('AI 总结', result || '（模型返回了空内容）', 'append');
-  } catch (err) {
-    showAIResult('出错了', err.message, null);
-  } finally {
-    setAILoading(null);
-  }
-}
-
-async function runAITags() {
-  const content = getEditorPlainText();
-  if (!content) { showToast('笔记还是空的，先写点内容'); return; }
-
-  setAILoading('tags');
-
-  try {
-    const result = await callAI([
-      { role: 'system', content: '阅读用户的笔记，给出 3-5 个中文标签。只输出标签本身，用英文逗号分隔，不要编号、不要解释、不要句号。' },
-      { role: 'user', content },
-    ]);
-
-    const fresh = result.split(/[,，\n]/)
-      .map((s) => s.trim().replace(/^#/, ''))
-      .filter(Boolean);
-
-    if (!fresh.length) throw new Error('模型没有返回可用标签');
-
-    const merged = [...new Set([...parseTags(els.tagsInput.value), ...fresh])];
-    els.tagsInput.value = merged.join(', ');
-    scheduleSave();
-    renderTagPicker();
-
-    showToast('已添加标签：' + fresh.join('、'));
-  } catch (err) {
-    showToast('生成标签失败：' + err.message);
-  } finally {
-    setAILoading(null);
+    ui.toast('清空失败：' + err.message);
   }
 }
 
 /* =========================================================
    事件绑定
    ========================================================= */
-els.newBtn.addEventListener('click', () => createNote());
+function bindEvents() {
+  els.newNbBtn.addEventListener('click', createNotebookFlow);
 
-/** 关闭页脚 / 编辑器里的小菜单 */
-function closePopMenus(except) {
-  const menus = [
-    ['notebook', els.notebookDropdown],
-    ['file', els.fileDropdown],
-    ['trash', els.trashDropdown],
-    ['ai', els.aiDropdown],
-    ['picker', els.tagPicker],
-  ];
-  menus.forEach(([key, el]) => {
-    if (key !== except) el.hidden = true;
+  els.homeBtn.addEventListener('click', showGrid);
+  els.settingsBtn.addEventListener('click', () => {
+    if (currentView === 'settings') showGrid();
+    else showSettings();
+  });
+
+  ui.setupDropdown(els.fileBtn, els.fileDropdown, {
+    items: async (action) => {
+      if (action === 'export') {
+        const info = exportBackup();
+        ui.toast(`已导出 ${info.notebooks} 个笔记本、${info.active} 条笔记（含回收站 ${info.trash} 条）`);
+      } else if (action === 'import') {
+        els.importFile.click();
+      } else if (action === 'clear') {
+        await clearAllData();
+      }
+    },
+  });
+
+  els.importFile.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+
+    try {
+      if (name.endsWith('.md') || name.endsWith('.markdown')) {
+        const nbId = targetNotebookId();
+        if (!nbId) throw new Error('请先创建一个笔记本');
+        const text = await file.text();
+        const info = await importMarkdown(text, file.name, nbId);
+        renderGrid();
+        const nb = state.notebooks.find((n) => n.id === nbId);
+        ui.toast(`已向「${nb ? nb.name : '笔记本'}」导入 ${info.count} 条笔记，父笔记「${info.rootTitle}」`);
+      } else {
+        const info = await importBackup(file);
+        renderGrid();
+        ui.toast(`导入完成：新增 ${info.added} 条笔记` + (info.skipped ? `，跳过 ${info.skipped} 条重复` : ''));
+      }
+    } catch (err) {
+      console.error('导入失败', err);
+      ui.toast('导入失败：' + err.message);
+    }
+
+    e.target.value = '';
   });
 }
-
-// 笔记本菜单
-els.notebookMenuBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const willShow = els.notebookDropdown.hidden;
-  closePopMenus('notebook');
-  els.notebookDropdown.hidden = !willShow;
-});
-
-els.notebookDropdown.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn || btn.disabled) return;
-  const action = btn.dataset.action;
-  els.notebookDropdown.hidden = true;
-
-  if (action === 'new') await createNotebook();
-  else if (action === 'rename') await renameNotebook();
-  else if (action === 'delete') await deleteNotebook();
-});
-
-els.notebookSelect.addEventListener('change', () => {
-  switchNotebook(els.notebookSelect.value);
-});
-
-// 文件菜单
-els.fileBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const willShow = els.fileDropdown.hidden;
-  closePopMenus('file');
-  els.fileDropdown.hidden = !willShow;
-});
-
-els.fileDropdown.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn) return;
-  const action = btn.dataset.action;
-  els.fileDropdown.hidden = true;
-
-  if (action === 'export') exportJSON();
-  else if (action === 'import') els.importFile.click();
-  else if (action === 'clear') await clearAllData();
-});
-
-// 设置
-els.settingsBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  closePopMenus();
-  if (currentView === 'settings') showNotesView();
-  else showSettingsView();
-});
-
-els.settingsCloseBtn.addEventListener('click', () => showNotesView());
-
-// 点击页面其它地方关闭菜单
-document.addEventListener('click', (e) => {
-  if (!els.notebookDropdown.hidden && !els.notebookDropdown.contains(e.target)) {
-    els.notebookDropdown.hidden = true;
-  }
-  if (!els.fileDropdown.hidden && !els.fileDropdown.contains(e.target)) {
-    els.fileDropdown.hidden = true;
-  }
-  if (!els.trashDropdown.hidden && !els.trashDropdown.contains(e.target)) {
-    els.trashDropdown.hidden = true;
-  }
-  if (!els.aiDropdown.hidden && !els.aiDropdown.contains(e.target) &&
-      !els.aiBtn.contains(e.target)) {
-    els.aiDropdown.hidden = true;
-  }
-  if (!els.tagPicker.hidden && !els.tagPicker.contains(e.target)) {
-    els.tagPicker.hidden = true;
-  }
-  closeCtxMenu();
-});
-
-// 回收站按钮：切换视图
-els.trashBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  closePopMenus();
-
-  if (currentView === 'trash') {
-    showNotesView();
-  } else {
-    showTrashView();
-  }
-});
-
-// 回收站：右键弹出小窗口（清空回收站等）
-els.trashBtn.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  const willShow = els.trashDropdown.hidden;
-  closePopMenus('trash');
-  const emptyBtn = els.trashDropdown.querySelector('button[data-action="empty"]');
-  if (emptyBtn) emptyBtn.disabled = !notes.some((n) => n.deletedAt);
-  els.trashDropdown.hidden = !willShow;
-});
-
-els.trashDropdown.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn || btn.disabled) return;
-  const action = btn.dataset.action;
-  els.trashDropdown.hidden = true;
-
-  if (action === 'open') {
-    if (currentView === 'trash') showNotesView();
-    else showTrashView();
-  } else if (action === 'empty') {
-    await emptyTrash();
-  }
-});
-
-// 回收站：拖入删除
-els.trashBtn.addEventListener('dragover', (e) => {
-  if (!dragState) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  els.trashBtn.classList.add('drag-over');
-});
-
-els.trashBtn.addEventListener('dragleave', () => {
-  els.trashBtn.classList.remove('drag-over');
-});
-
-els.trashBtn.addEventListener('drop', async (e) => {
-  e.preventDefault();
-  els.trashBtn.classList.remove('drag-over');
-  if (!dragState) return;
-  const id = dragState.id;
-  dragState = null;
-  dropTarget = null;
-  clearDropIndicators();
-  await softDeleteNote(id);
-});
-
-els.emptyTrashBtn.addEventListener('click', emptyTrash);
-
-els.importFile.addEventListener('change', async (e) => {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
-
-  const name = (file.name || '').toLowerCase();
-
-  try {
-    if (name.endsWith('.md') || name.endsWith('.markdown')) {
-      const text = await file.text();
-      await importMarkdownFile(text, file.name);
-    } else {
-      await importJSON(file);
-    }
-  } catch (err) {
-    console.error('导入失败', err);
-    showToast('导入失败：' + err.message);
-  }
-
-  e.target.value = '';
-});
-
-els.searchInput.addEventListener('input', renderList);
-
-// 笔记列表：右键空白区域 → 新建笔记
-els.noteList.addEventListener('contextmenu', (e) => {
-  if (e.target.closest('.note-item')) return; // 笔记项有自己的菜单
-  e.preventDefault();
-  openCtxMenu(e.clientX, e.clientY, [
-    { heading: '笔记列表' },
-    { label: '新建笔记', action: () => createNote() },
-    { label: '新建笔记本…', action: () => createNotebook() },
-  ]);
-});
-
-els.titleInput.addEventListener('input', () => {
-  scheduleSave();
-  // 面包屑跟随标题实时更新
-  const note = notes.find((n) => n.id === currentId);
-  if (note) {
-    note.title = els.titleInput.value;
-    renderBreadcrumb(note);
-  }
-});
-els.contentInput.addEventListener('input', scheduleSave);
-els.tagsInput.addEventListener('input', () => {
-  scheduleSave();
-  if (!els.tagPicker.hidden) renderTagPicker();
-});
-
-els.titleInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    els.contentInput.focus();
-  }
-});
-
-// 标签面板
-els.tagBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  closePopMenus();
-  if (els.tagPanel.hidden) openTagPanel();
-  else closeTagPanel();
-});
-
-els.tagPickerBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const willShow = els.tagPicker.hidden;
-  if (willShow) renderTagPicker();
-  els.tagPicker.hidden = !willShow;
-});
-
-// AI 工具菜单
-els.aiBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const willShow = els.aiDropdown.hidden;
-  closePopMenus('ai');
-  els.aiDropdown.hidden = !willShow;
-});
-
-els.aiDropdown.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn) return;
-  const action = btn.dataset.action;
-  els.aiDropdown.hidden = true;
-
-  if (action === 'summary') await runAISummary();
-  else if (action === 'tags') await runAITags();
-});
-
-els.deleteBtn.addEventListener('click', deleteNote);
-
-els.aiInsertBtn.addEventListener('click', insertAIResult);
-els.aiDiscardBtn.addEventListener('click', hideAIResult);
-
-[els.apiBase, els.apiModel, els.apiKey].forEach((el) => {
-  el.addEventListener('input', saveSettings);
-});
-
-// 对话框
-els.modalMask.addEventListener('mousedown', (e) => {
-  if (e.target === els.modalMask) closeModal(null);
-});
-els.modalOk.addEventListener('click', submitModal);
-els.modalCancel.addEventListener('click', () => closeModal(null));
-
-document.addEventListener('keydown', (e) => {
-  if (modalState) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      closeModal(null);
-    } else if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') {
-      e.preventDefault();
-      submitModal();
-    }
-    return;
-  }
-
-  if (e.key === 'Escape') {
-    if (!els.ctxMenu.hidden) closeCtxMenu();
-    else if (!els.tagPicker.hidden) els.tagPicker.hidden = true;
-    else if (!els.tagPanel.hidden) closeTagPanel();
-  }
-});
-
-document.addEventListener('keydown', (e) => {
-  if (modalState) return;
-  const mod = e.metaKey || e.ctrlKey;
-  if (!mod) return;
-
-  if (e.key === 's') {
-    e.preventDefault();
-    flushSave();
-    showToast('已保存');
-  }
-
-  if (e.key === 'n') {
-    e.preventDefault();
-    createNote();
-  }
-});
-
-window.addEventListener('beforeunload', flushSave);
-
-/* =========================================================
-   启动
-   ========================================================= */
-async function init() {
-  loadSettings();
-
-  try {
-    notebooks = await DB.allNotebooks();
-    notes = await DB.allNotes();
-  } catch (err) {
-    console.error('读取本地数据失败', err);
-    notebooks = [];
-    notes = [];
-  }
-
-  if (!notebooks.length) {
-    const nb = {
-      id: genNbId(),
-      name: '我的笔记',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    notebooks.push(nb);
-    await DB.putNotebook(nb);
-  }
-
-  const nbIds = new Set(notebooks.map((n) => n.id));
-  const fallbackNbId = notebooks[0].id;
-  let needsSave = false;
-  notes.forEach((n) => {
-    if (!n.notebookId || !nbIds.has(n.notebookId)) {
-      n.notebookId = fallbackNbId;
-      needsSave = true;
-    }
-    if (n.parentId === undefined) { n.parentId = null; needsSave = true; }
-    if (n.order === undefined) { n.order = 0; needsSave = true; }
-  });
-  if (needsSave) await DB.bulkPutNotes(notes);
-
-  const savedNb = localStorage.getItem('current_notebook');
-  currentNotebookId = (savedNb && nbIds.has(savedNb)) ? savedNb : notebooks[0].id;
-
-  renderNotebookSelect();
-  renderList();
-
-  const first = notes
-    .filter((n) => n.notebookId === currentNotebookId && !n.parentId && !n.deletedAt)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0];
-
-  if (first) {
-    selectNote(first.id);
-  } else {
-    showEmpty();
-  }
-}
-
-init();
 </script>
 
 </body>
