@@ -47,7 +47,8 @@
     box-shadow: 0 6px 18px rgba(0,0,0,.08);
     transform: translateY(-1px);
   }
-  .nb-card[draggable="true"] { cursor: grab; }
+  .nb-card .nb-card-main { cursor: grab; }
+  .nb-card.dragging .nb-card-main { cursor: grabbing; }
   .nb-card.dragging { opacity: .45; }
 
   /* 拖拽指示：左右插入 / 合并到卡片里 */
@@ -145,8 +146,6 @@
       <p class="wb-tip">拖动卡片可以调整顺序；拖到另一个笔记本上可以把它的笔记页合并过去。</p>
     </div>
 
-    <!-- 回收站视图（组件渲染，按笔记本范围） -->
-    <div class="trash-view" id="trashView" hidden></div>
     <!-- 设置视图（主区域整块替换，URL 不变） -->
     <div class="settings-view" id="settingsView" hidden></div>
   </main>
@@ -156,7 +155,6 @@
     <button class="ghost-btn" id="importBtn" data-tip="导入用户数据 / 笔记本 / .md">📤 导入</button>
     <button class="ghost-btn" id="exportBtn" data-tip="导出全部用户数据（笔记本 + 配置）">📥 导出</button>
     <button class="ghost-btn" id="settingsBtn" data-tip="设置：AI 配置、数据管理">⚙️ 设置</button>
-    <button class="ghost-btn" id="trashBtn" data-tip="回收站（上次打开的笔记本）">🗑️ 回收站</button>
 
     <input type="file" id="importFile"
            accept=".json,.md,.markdown,application/json,text/markdown,text/plain" hidden>
@@ -175,7 +173,6 @@ import {
 } from './shared/db.js';
 import * as ui from './shared/ui.js';
 import { createSettingsView, askConfigMerge, onTagsChanged } from './shared/settings.js';
-import { createTrashView } from './shared/trash.js';
 
 ui.initUi();
 
@@ -184,21 +181,17 @@ const els = {
   wbSub: $('#wbSub'),
   nbGrid: $('#nbGrid'),
   settingsView: $('#settingsView'),
-  trashView: $('#trashView'),
   homeBtn: $('#homeBtn'),
   importBtn: $('#importBtn'),
   exportBtn: $('#exportBtn'),
   settingsBtn: $('#settingsBtn'),
-  trashBtn: $('#trashBtn'),
   importFile: $('#importFile'),
 };
 
 let settingsView = null;
-let trashView = null;
-let currentView = 'grid';    // 'grid' | 'settings' | 'trash'
+let currentView = 'grid';    // 'grid' | 'settings'
 let dragState = null;
 let dropTarget = null;
-let currentTrashId = null;
 
 /* =========================================================
    启动
@@ -209,6 +202,7 @@ async function boot() {
   settingsView = createSettingsView({
     root: els.settingsView,
     onClose: () => showGrid(),
+    allowWipe: true,                     // 只有工作台的设置能删除所有用户数据
     // 主界面没有「当前笔记本」，因此设置里不显示标签
     getScopeNotebookId: () => null,
     onWipe: async () => {
@@ -218,14 +212,6 @@ async function boot() {
       ui.hideToast();
       ui.toast('已删除所有用户数据');
     },
-  });
-
-  trashView = createTrashView({
-    root: els.trashView,
-    closeLabel: '返回工作台',
-    getNotebookName: (id) => (getNotebook(id) || {}).name || '',
-    onChange: () => { renderTrash(); renderGrid(); },
-    onClose: () => showGrid(),
   });
 
   onTagsChanged(() => renderGrid());
@@ -250,14 +236,12 @@ boot().catch((err) => {
 function setActive(...active) {
   els.homeBtn.classList.toggle('active', active.includes('home'));
   els.settingsBtn.classList.toggle('active', active.includes('settings'));
-  els.trashBtn.classList.toggle('active', active.includes('trash'));
 }
 
 function showGrid() {
   currentView = 'grid';
   els.workbench.hidden = false;
   els.settingsView.hidden = true;
-  els.trashView.hidden = true;
   setActive('home');
 }
 
@@ -265,25 +249,8 @@ function showSettings() {
   currentView = 'settings';
   els.workbench.hidden = true;
   els.settingsView.hidden = false;
-  els.trashView.hidden = true;
   setActive('settings');
   settingsView.render();
-}
-
-function showTrash(nbId) {
-  const id = nbId || targetNotebookId();
-  if (!id) { ui.toast('还没有可查看的笔记本'); return; }
-  currentView = 'trash';
-  els.workbench.hidden = true;
-  els.settingsView.hidden = true;
-  els.trashView.hidden = false;
-  setActive('trash');
-  renderTrash(id);
-}
-
-function renderTrash(nbId) {
-  trashView.render(nbId || currentTrashId || targetNotebookId());
-  currentTrashId = nbId || currentTrashId;
 }
 
 /* =========================================================
@@ -317,7 +284,6 @@ function buildCard(nb) {
   const li = document.createElement('li');
   li.className = 'nb-card';
   li.dataset.id = nb.id;
-  li.draggable = true;
 
   const main = document.createElement('button');
   main.className = 'nb-card-main';
@@ -369,55 +335,51 @@ function clearDropMarks() {
 }
 
 function bindCardDrag(li, nb) {
-  li.addEventListener('dragstart', (e) => {
-    dragState = { id: nb.id };
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', nb.id); } catch (_) {}
-    li.classList.add('dragging');
+  // 用指针事件实现拖拽（shared/ui.js 的 beginPointerDrag）
+  li.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    ui.beginPointerDrag(e, { id: nb.id, li }, {
+      onStart: () => {
+        dragState = { id: nb.id };
+        li.classList.add('dragging');
+      },
+      onMove: (x, y) => updateCardDropTarget(x, y),
+      onDrop: async () => {
+        const target = dropTarget;
+        const sourceId = nb.id;
+        dragState = null;
+        dropTarget = null;
+        li.classList.remove('dragging');
+        clearDropMarks();
+        if (!target || sourceId === target.id) return;
+        if (target.position === 'inside') await askMergeNotebooks(sourceId, target.id);
+        else await reorderNotebook(sourceId, target.id, target.position);
+      },
+    });
   });
+}
 
-  li.addEventListener('dragend', () => {
-    dragState = null;
+/** 拖拽笔记本时计算落点：左右插入 / 卡片中间 = 合并 */
+function updateCardDropTarget(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const card = el && el.closest ? el.closest('.nb-card') : null;
+
+  if (!card || card.classList.contains('new') || !dragState ||
+      card.dataset.id === dragState.id) {
+    clearDropMarks();
     dropTarget = null;
-    li.classList.remove('dragging');
-    clearDropMarks();
-  });
+    return;
+  }
 
-  li.addEventListener('dragover', (e) => {
-    if (!dragState || dragState.id === nb.id) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+  const rect = card.getBoundingClientRect();
+  const rel = x - rect.left;
+  let position = 'inside';
+  if (rel < rect.width * 0.3) position = 'before';
+  else if (rel > rect.width * 0.7) position = 'after';
 
-    const rect = li.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    let position = 'inside';
-    if (x < rect.width * 0.3) position = 'before';
-    else if (x > rect.width * 0.7) position = 'after';
-
-    clearDropMarks();
-    li.classList.add('drop-' + position);
-    dropTarget = { id: nb.id, position };
-  });
-
-  li.addEventListener('dragleave', (e) => {
-    if (!li.contains(e.relatedTarget)) {
-      li.classList.remove('drop-before', 'drop-after', 'drop-inside');
-    }
-  });
-
-  li.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    if (!dragState || !dropTarget) return;
-    const sourceId = dragState.id;
-    const { id: targetId, position } = dropTarget;
-    dragState = null;
-    dropTarget = null;
-    clearDropMarks();
-
-    if (sourceId === targetId) return;
-    if (position === 'inside') await askMergeNotebooks(sourceId, targetId);
-    else await reorderNotebook(sourceId, targetId, position);
-  });
+  clearDropMarks();
+  card.classList.add('drop-' + position);
+  dropTarget = { id: card.dataset.id, position };
 }
 
 async function reorderNotebook(sourceId, targetId, position) {
@@ -462,10 +424,6 @@ function openNotebookMenu(id, x, y) {
     { heading: nb.name },
     { label: '打开', action: () => openNotebook(id) },
     { label: '重命名…', action: () => renameNotebook(id) },
-    {
-      label: trashed ? `回收站（${trashed} 条）` : '回收站',
-      action: () => showTrash(id),
-    },
     { separator: true },
     {
       label: `删除笔记本（${active + trashed} 条笔记）`,
@@ -542,13 +500,6 @@ async function deleteNotebook(id) {
 /* =========================================================
    导入 / 导出（用户数据）
    ========================================================= */
-function targetNotebookId() {
-  const saved = readStore(LS_CURRENT_NB, '');
-  const list = sortedNotebooks();
-  if (list.some((nb) => nb.id === saved)) return saved;
-  return list.length ? list[0].id : null;
-}
-
 async function handleImport(file) {
   const lower = (file.name || '').toLowerCase();
 
@@ -598,11 +549,6 @@ function bindEvents() {
   els.settingsBtn.addEventListener('click', () => {
     if (currentView === 'settings') showGrid();
     else showSettings();
-  });
-
-  els.trashBtn.addEventListener('click', () => {
-    if (currentView === 'trash') showGrid();
-    else showTrash();
   });
 
   els.importBtn.addEventListener('click', () => els.importFile.click());

@@ -775,8 +775,9 @@
 
   /* ── 页脚图标按钮 ───────────────────── */
   .footer-icon-btn {
-    flex: 0 0 38px;
+    flex: 0 1 38px;
     width: 38px;
+    min-width: 0;
     height: 32px;
     display: grid;
     place-items: center;
@@ -1065,3 +1066,25 @@
     font-size: 12.5px;
     white-space: nowrap;
   }
+
+  /* 侧边栏宽度调节手柄 */
+  .sidebar-resizer {
+    flex: 0 0 6px;
+    position: relative;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 6;
+    transition: background .15s;
+  }
+  .sidebar-resizer::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+  .sidebar-resizer:hover,
+  .sidebar-resizer.active { background: var(--accent-soft); }
+  .sidebar-resizer.active::after { background: var(--accent); }

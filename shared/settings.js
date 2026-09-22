@@ -273,6 +273,7 @@ export async function askConfigMerge(importedAi) {
 
 export function createSettingsView({
   root, onClose, onChanged, onAiChanged, onWipe, getScopeNotebookId,
+  allowWipe = false,
 } = {}) {
   root.innerHTML = `
     <div class="settings-head">
@@ -311,7 +312,7 @@ export function createSettingsView({
         <ul class="tag-manage-list" data-role="tagList"></ul>
       </section>
 
-      <section class="settings-section" data-role="dataSection">
+      <section class="settings-section" data-role="dataSection" hidden>
         <h3>数据管理</h3>
         <p class="settings-hint">
           删除所有用户数据是唯一不可恢复的操作：全部笔记本、全部笔记（含回收站）和 AI 配置都会被清除。
@@ -342,8 +343,12 @@ export function createSettingsView({
     apiKey: root.querySelector('[data-role="apiKey"]'),
     tagSection: root.querySelector('[data-role="tagSection"]'),
     tagList: root.querySelector('[data-role="tagList"]'),
+    dataSection: root.querySelector('[data-role="dataSection"]'),
     wipe: root.querySelector('[data-role="wipe"]'),
   };
+
+  // 「删除所有用户数据」只在工作台的设置里出现（笔记页无权删除全部数据）
+  el.dataSection.hidden = !allowWipe;
 
   el.close.addEventListener('click', () => { if (onClose) onClose(); });
 
@@ -415,6 +420,7 @@ export function createSettingsView({
   }
 
   el.wipe.addEventListener('click', async () => {
+    if (!allowWipe) return;
     const nbCount = state.notebooks.length;
     const noteCount = state.notes.length;
     const trashCount = state.notes.filter((n) => n.deletedAt).length;

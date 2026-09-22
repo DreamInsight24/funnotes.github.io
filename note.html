@@ -25,10 +25,10 @@
     <ul class="note-list" id="noteList"></ul>
 
     <div class="sidebar-footer">
-      <button class="ghost-btn" id="nbBtn" data-tip="切换笔记本（不离开页面）">📓 笔记本</button>
-      <button class="ghost-btn" id="trashBtn" data-tip="回收站：左键打开，右键可清空">🗑️ 回收站</button>
-      <button class="ghost-btn" id="settingsBtn" data-tip="设置：AI 配置、数据管理">⚙️ 设置</button>
-      <button class="ghost-btn" id="fileBtn" data-tip="导入 / 导出当前笔记本">📁 文件</button>
+      <button class="footer-icon-btn" id="nbBtn" data-tip="切换笔记本（不离开页面）" aria-label="切换笔记本">📓</button>
+      <button class="footer-icon-btn" id="trashBtn" data-tip="回收站：左键打开，右键可清空；也可以把笔记拖到这里删除" aria-label="回收站">🗑️</button>
+      <button class="footer-icon-btn" id="settingsBtn" data-tip="设置：AI 配置、标签管理" aria-label="设置">⚙️</button>
+      <button class="footer-icon-btn" id="fileBtn" data-tip="导入 / 导出当前笔记本" aria-label="文件">📁</button>
 
       <div class="footer-dropdown" id="nbDropdown" hidden></div>
 
@@ -47,6 +47,8 @@
              accept=".json,.md,.markdown,application/json,text/markdown,text/plain" hidden>
     </div>
   </aside>
+
+  <div class="sidebar-resizer" id="sidebarResizer" data-tip="拖动调整侧边栏宽度" aria-label="调整侧边栏宽度"></div>
 
   <!-- 主区域 -->
   <main class="main">
@@ -132,7 +134,6 @@ import {
   state, loadAll, getNotebook, sortedNotebooks, notesInNotebook, mostRecentNoteId,
   saveNote, createNotebook, exportNotebook, importMarkdown,
   readPayload, mergeUserData, addNotebookFromPayload, addNotesIntoNotebook,
-  deleteAllUserData,
 } from './shared/db.js';
 import * as ui from './shared/ui.js';
 import {
@@ -146,6 +147,9 @@ ui.initUi();
    元素
    ========================================================= */
 const els = {
+  app: $('.app'),
+  sidebar: $('.sidebar'),
+  resizer: $('#sidebarResizer'),
   backBtn: $('#backBtn'),
   brandName: $('#brandName'),
   newBtn: $('#newBtn'),
@@ -224,6 +228,7 @@ async function boot() {
   syncUrl();
 
   initComponents();
+  initSidebarResizer();
   bindEvents();
   updateBrand();
 
@@ -267,10 +272,7 @@ function initComponents() {
     onChanged: () => renderList(),
     onAiChanged: () => updateAIBtn(),
     getScopeNotebookId: () => currentNotebookId,
-    onWipe: async () => {
-      await deleteAllUserData();
-      await goWorkbench(true);
-    },
+    // 笔记页无权删除所有用户数据（该入口只在工作台的设置里）
   });
 
   // 标签被改名 / 删除后，笔记树（标签搜索）与当前编辑器同步刷新
@@ -307,6 +309,53 @@ function updateBrand() {
 /* =========================================================
    当前笔记本 / URL
    ========================================================= */
+const SIDEBAR_KEY = 'note_sidebar_width';
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 560;
+
+/** 侧边栏宽度：可拖动调整，并记住上次的宽度 */
+function applySidebarWidth(width) {
+  const max = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, window.innerWidth - 240));
+  const w = Math.max(SIDEBAR_MIN, Math.min(width, max));
+  els.sidebar.style.width = w + 'px';
+  els.sidebar.style.flexBasis = w + 'px';
+  return w;
+}
+
+function initSidebarResizer() {
+  const saved = Number(readStore(SIDEBAR_KEY, ''));
+  if (saved) applySidebarWidth(saved);
+
+  let dragging = false;
+
+  els.resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    els.resizer.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    applySidebarWidth(e.clientX);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    els.resizer.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    writeStore(SIDEBAR_KEY, String(parseInt(els.sidebar.style.width, 10) || 0));
+  });
+
+  window.addEventListener('resize', () => {
+    const cur = parseInt(els.sidebar.style.width, 10);
+    if (cur) applySidebarWidth(cur);
+  });
+}
+
 function syncUrl() {
   const url = location.pathname + '?nb=' + encodeURIComponent(currentNotebookId);
   history.replaceState(null, '', url);
@@ -480,7 +529,6 @@ function renderTreeNode(note, depth, container, byParent, inNbSet) {
   li.className = 'note-item' + (note.id === currentId ? ' active' : '');
   if (hasChildren) li.classList.add('has-children');
   li.dataset.id = note.id;
-  li.draggable = true;
   li.style.paddingLeft = (10 + depth * 14) + 'px';
 
   const row = document.createElement('div');
@@ -506,62 +554,27 @@ function renderTreeNode(note, depth, container, byParent, inNbSet) {
   li.addEventListener('click', () => selectNote(note.id));
   bindNoteContextMenu(li, note);
 
-  li.addEventListener('dragstart', (e) => {
-    dragState = { id: note.id };
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', note.id); } catch (_) {}
-    li.classList.add('dragging');
-  });
-
-  li.addEventListener('dragend', () => {
-    dragState = null;
-    dropTarget = null;
-    li.classList.remove('dragging');
-    clearDropIndicators();
-    els.trashBtn.classList.remove('drag-over');
-  });
-
-  li.addEventListener('dragover', (e) => {
-    if (!dragState) return;
-    if (dragState.id === note.id) return;
-
-    const { byId } = buildIndexes(state.notes);
-    if (isDescendantOf(note.id, dragState.id, byId)) return;
-
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    const rect = li.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const h = rect.height;
-
-    let position;
-    if (y < h * 0.25) position = 'before';
-    else if (y > h * 0.75) position = 'after';
-    else position = 'inside';
-
-    if (!canDrop(dragState.id, note.id, position)) return;
-
-    clearDropIndicators();
-    li.classList.add('drop-' + position);
-    dropTarget = { id: note.id, position };
-  });
-
-  li.addEventListener('dragleave', (e) => {
-    if (!li.contains(e.relatedTarget)) {
-      li.classList.remove('drop-before', 'drop-after', 'drop-inside');
-    }
-  });
-
-  li.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    if (!dragState || !dropTarget) return;
-    const draggedId = dragState.id;
-    const { id: targetId, position } = dropTarget;
-    dragState = null;
-    dropTarget = null;
-    clearDropIndicators();
-    await moveNote(draggedId, targetId, position);
+  // 拖拽：用指针事件实现（见 shared/ui.js 的 beginPointerDrag）
+  li.addEventListener('mousedown', (e) => {
+    ui.beginPointerDrag(e, { id: note.id, li }, {
+      onStart: () => {
+        dragState = { id: note.id };
+        li.classList.add('dragging');
+      },
+      onMove: (x, y) => updateDropTargetAt(x, y),
+      onDrop: async () => {
+        const target = dropTarget;
+        const draggedId = note.id;
+        dragState = null;
+        dropTarget = null;
+        li.classList.remove('dragging');
+        clearDropIndicators();
+        els.trashBtn.classList.remove('drag-over');
+        if (!target) return;
+        if (target.type === 'trash') { await deleteNoteById(draggedId); return; }
+        await moveNote(draggedId, target.id, target.position);
+      },
+    });
   });
 
   container.appendChild(li);
@@ -574,6 +587,47 @@ function renderTreeNode(note, depth, container, byParent, inNbSet) {
 function clearDropIndicators() {
   els.noteList.querySelectorAll('.drop-before, .drop-after, .drop-inside')
     .forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-inside'));
+}
+
+/** 拖拽时计算当前落点：回收站 / 另一条笔记的 before·after·inside */
+function updateDropTargetAt(x, y) {
+  const clear = () => {
+    clearDropIndicators();
+    els.trashBtn.classList.remove('drag-over');
+    dropTarget = null;
+  };
+
+  if (!dragState) { clear(); return; }
+
+  const el = document.elementFromPoint(x, y);
+  if (!el) { clear(); return; }
+
+  if (el === els.trashBtn || els.trashBtn.contains(el)) {
+    clearDropIndicators();
+    els.trashBtn.classList.add('drag-over');
+    dropTarget = { type: 'trash' };
+    return;
+  }
+
+  const li = el.closest('.note-item');
+  if (!li) { clear(); return; }
+
+  const id = li.dataset.id;
+  const { byId } = buildIndexes(state.notes);
+  if (id === dragState.id || isDescendantOf(id, dragState.id, byId)) { clear(); return; }
+
+  const rect = li.getBoundingClientRect();
+  const rel = y - rect.top;
+  let position = 'inside';
+  if (rel < rect.height * 0.25) position = 'before';
+  else if (rel > rect.height * 0.75) position = 'after';
+
+  if (!canDrop(dragState.id, id, position)) { clear(); return; }
+
+  clearDropIndicators();
+  els.trashBtn.classList.remove('drag-over');
+  li.classList.add('drop-' + position);
+  dropTarget = { type: 'note', id, position };
 }
 
 function toggleCollapse(id) {

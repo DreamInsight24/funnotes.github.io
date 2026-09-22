@@ -45,6 +45,7 @@ export function initUi() {
   bindTips();
   bindCtxMenu();
   bindModal();
+  initPointerDrag();
 
   // 点页面其它地方关闭所有下拉菜单
   document.addEventListener('click', () => closePopMenus());
@@ -235,7 +236,14 @@ export function openModal(opts) {
     // 底部按钮：默认「取消 / 确定」，也可以完全自定义
     const buttons = o.buttons || [
       { label: o.cancelText || '取消', value: null, hidden: o.hideCancel === true },
-      { label: o.confirmText || '确定', value: true, primary: true, danger: o.danger },
+      {
+        label: o.confirmText || '确定',
+        value: true,
+        primary: true,
+        danger: o.danger,
+        // 有输入框时，确认按钮回传输入值（否则 promptModal 拿不到内容）
+        useFields: true,
+      },
     ];
 
     refs.modalFoot.innerHTML = '';
@@ -249,7 +257,11 @@ export function openModal(opts) {
       if (cfg.primary) btn.dataset.primary = '1';
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
-        closeModal(cfg.value);
+        closeModal(
+          cfg.useFields && modalState.fields.length
+            ? modalState.fields.map((f) => f.value)
+            : cfg.value
+        );
       });
       if (cfg.countdown) startCountdown(btn, cfg);
       refs.modalFoot.appendChild(btn);
@@ -375,6 +387,71 @@ export function closePopMenus(except) {
   popMenus.forEach((el) => {
     if (el !== except) el.hidden = true;
   });
+}
+
+/* ── 指针拖拽 ───────────────────────────────
+   原生 HTML5 拖拽在长距离拖动时容易丢事件（自动化输入下更明显），
+   这里用 mousedown / mousemove / mouseup 自己实现，行为更可控。
+   ─────────────────────────────────────────── */
+
+let dragSession = null;
+let swallowClick = false;
+
+/**
+ * 拖拽源在 mousedown 时调用
+ * @param {MouseEvent} e
+ * @param {*} payload 传给回调的数据
+ * @param {{ onStart?:Function, onMove?:Function, onDrop?:Function, onCancel?:Function }} handlers
+ */
+export function beginPointerDrag(e, payload, handlers = {}) {
+  if (e.button !== 0) return;
+  dragSession = {
+    startX: e.clientX,
+    startY: e.clientY,
+    payload,
+    handlers,
+    active: false,
+    threshold: handlers.threshold || 6,
+  };
+}
+
+export function isPointerDragging() {
+  return !!(dragSession && dragSession.active);
+}
+
+function initPointerDrag() {
+  document.addEventListener('mousemove', (e) => {
+    const st = dragSession;
+    if (!st) return;
+
+    if (!st.active) {
+      if (Math.abs(e.clientX - st.startX) + Math.abs(e.clientY - st.startY) < st.threshold) return;
+      st.active = true;
+      if (st.handlers.onStart) st.handlers.onStart(st.payload);
+    }
+
+    e.preventDefault();
+    if (st.handlers.onMove) st.handlers.onMove(e.clientX, e.clientY, st.payload);
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    const st = dragSession;
+    if (!st) return;
+    dragSession = null;
+    if (!st.active) return;
+
+    swallowClick = true;      // 拖拽结束后不要再触发点击
+    if (st.handlers.onDrop) st.handlers.onDrop(e.clientX, e.clientY, st.payload);
+  });
+
+  // 拖拽过程中/刚结束时拦住 click，避免误选中或误打开
+  document.addEventListener('click', (e) => {
+    if (!swallowClick) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
+  document.addEventListener('mousedown', () => { swallowClick = false; }, true);
 }
 
 /** 把按钮与面板绑定成「点开 / 点关 / 点别处关闭」的下拉菜单 */
