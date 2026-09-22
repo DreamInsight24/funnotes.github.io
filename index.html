@@ -6,7 +6,7 @@
 <title>FunNotes · 工作台</title>
 <link rel="stylesheet" href="./shared/style.css">
 <style>
-  /* 工作台专属：笔记本网格 */
+  /* 工作台专属：笔记本网格 + 拖拽排序 */
   .workspace-app { flex-direction: column; }
 
   .workbench {
@@ -19,16 +19,10 @@
     padding: 28px 32px 32px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 18px;
   }
 
-  .wb-head {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
+  .wb-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .wb-title { margin: 0; font-size: 24px; font-weight: 600; }
   .wb-sub { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
 
@@ -46,12 +40,32 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     background: #fff;
-    transition: border-color .15s, box-shadow .15s, transform .15s;
+    transition: border-color .15s, box-shadow .15s, transform .15s, opacity .15s;
   }
   .nb-card:hover {
     border-color: var(--accent);
     box-shadow: 0 6px 18px rgba(0,0,0,.08);
     transform: translateY(-1px);
+  }
+  .nb-card[draggable="true"] { cursor: grab; }
+  .nb-card.dragging { opacity: .45; }
+
+  /* 拖拽指示：左右插入 / 合并到卡片里 */
+  .nb-card.drop-before::before,
+  .nb-card.drop-after::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  .nb-card.drop-before::before { left: -9px; }
+  .nb-card.drop-after::after { right: -9px; }
+  .nb-card.drop-inside {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: var(--accent-soft);
   }
 
   .nb-card-main {
@@ -107,17 +121,11 @@
   .nb-card.new:hover .nb-card-main { color: var(--accent); }
   .nb-card.new .nb-plus { font-size: 22px; }
 
-  /* 底栏的下拉菜单靠右收窄，避免横跨整页 */
-  .footer-bar .footer-dropdown {
-    left: auto;
-    right: 20px;
-    min-width: 220px;
-  }
+  .wb-tip { font-size: 12px; color: var(--muted); }
 
   @media (max-width: 720px) {
     .workbench { padding: 20px 16px 24px; }
     .nb-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-    .wb-head { align-items: stretch; }
   }
 </style>
 </head>
@@ -132,26 +140,23 @@
           <h1 class="wb-title">📓 FunNotes</h1>
           <p class="wb-sub" id="wbSub">选择一个笔记本开始</p>
         </div>
-        <button class="ghost-btn primary" id="newNbBtn" data-tip="新建笔记本后直接进入笔记页">＋ 新建笔记本</button>
       </div>
       <ul class="nb-grid" id="nbGrid"></ul>
+      <p class="wb-tip">拖动卡片可以调整顺序；拖到另一个笔记本上可以把它的笔记页合并过去。</p>
     </div>
 
+    <!-- 回收站视图（组件渲染，按笔记本范围） -->
+    <div class="trash-view" id="trashView" hidden></div>
     <!-- 设置视图（主区域整块替换，URL 不变） -->
     <div class="settings-view" id="settingsView" hidden></div>
   </main>
 
   <div class="footer-bar">
-    <button class="footer-icon-btn" id="homeBtn" data-tip="笔记本列表" aria-label="笔记本列表">📓</button>
-    <button class="footer-icon-btn" id="settingsBtn" data-tip="设置：AI 配置、标签管理" aria-label="设置">⚙️</button>
-    <button class="ghost-btn" id="fileBtn" data-tip="文件：导入 / 导出 / 清空数据">📁 文件</button>
-
-    <div class="footer-dropdown" id="fileDropdown" hidden>
-      <button data-action="export">导出备份</button>
-      <button data-action="import">导入文件（.json / .md）</button>
-      <div class="dropdown-divider"></div>
-      <button data-action="clear" class="danger">清空所有数据</button>
-    </div>
+    <button class="ghost-btn" id="homeBtn" data-tip="回到笔记本列表">📓 笔记本</button>
+    <button class="ghost-btn" id="importBtn" data-tip="导入用户数据 / 笔记本 / .md">📤 导入</button>
+    <button class="ghost-btn" id="exportBtn" data-tip="导出全部用户数据（笔记本 + 配置）">📥 导出</button>
+    <button class="ghost-btn" id="settingsBtn" data-tip="设置：AI 配置、数据管理">⚙️ 设置</button>
+    <button class="ghost-btn" id="trashBtn" data-tip="回收站（上次打开的笔记本）">🗑️ 回收站</button>
 
     <input type="file" id="importFile"
            accept=".json,.md,.markdown,application/json,text/markdown,text/plain" hidden>
@@ -163,11 +168,14 @@ import {
   $, LS_CURRENT_NB, readStore, writeStore, takeNotice, formatTime, DEFAULT_NOTEBOOK_NAME,
 } from './shared/utils.js';
 import {
-  state, loadAll, sortedNotebooks, notesInNotebook, createNotebook, saveNotebook,
-  deleteNotebookCascade, exportBackup, importBackup, importMarkdown, resetAll,
+  state, loadAll, getNotebook, sortedNotebooks, notesInNotebook, createNotebook, saveNotebook,
+  deleteNotebookCascade, reorderNotebooks, mergeNotebooks,
+  exportUserData, readPayload, mergeUserData, addNotebookFromPayload, createNotebookFromMarkdown,
+  deleteAllUserData,
 } from './shared/db.js';
 import * as ui from './shared/ui.js';
-import { createSettingsView } from './shared/settings.js';
+import { createSettingsView, askConfigMerge, onTagsChanged } from './shared/settings.js';
+import { createTrashView } from './shared/trash.js';
 
 ui.initUi();
 
@@ -175,17 +183,22 @@ const els = {
   workbench: $('#workbenchView'),
   wbSub: $('#wbSub'),
   nbGrid: $('#nbGrid'),
-  newNbBtn: $('#newNbBtn'),
   settingsView: $('#settingsView'),
+  trashView: $('#trashView'),
   homeBtn: $('#homeBtn'),
+  importBtn: $('#importBtn'),
+  exportBtn: $('#exportBtn'),
   settingsBtn: $('#settingsBtn'),
-  fileBtn: $('#fileBtn'),
-  fileDropdown: $('#fileDropdown'),
+  trashBtn: $('#trashBtn'),
   importFile: $('#importFile'),
 };
 
 let settingsView = null;
-let currentView = 'grid';   // 'grid' | 'settings'
+let trashView = null;
+let currentView = 'grid';    // 'grid' | 'settings' | 'trash'
+let dragState = null;
+let dropTarget = null;
+let currentTrashId = null;
 
 /* =========================================================
    启动
@@ -196,7 +209,26 @@ async function boot() {
   settingsView = createSettingsView({
     root: els.settingsView,
     onClose: () => showGrid(),
+    // 主界面没有「当前笔记本」，因此设置里不显示标签
+    getScopeNotebookId: () => null,
+    onWipe: async () => {
+      await deleteAllUserData();
+      renderGrid();
+      settingsView.render();
+      ui.hideToast();
+      ui.toast('已删除所有用户数据');
+    },
   });
+
+  trashView = createTrashView({
+    root: els.trashView,
+    closeLabel: '返回工作台',
+    getNotebookName: (id) => (getNotebook(id) || {}).name || '',
+    onChange: () => { renderTrash(); renderGrid(); },
+    onClose: () => showGrid(),
+  });
+
+  onTagsChanged(() => renderGrid());
 
   bindEvents();
   renderGrid();
@@ -215,21 +247,43 @@ boot().catch((err) => {
 /* =========================================================
    视图切换（URL 不变）
    ========================================================= */
+function setActive(...active) {
+  els.homeBtn.classList.toggle('active', active.includes('home'));
+  els.settingsBtn.classList.toggle('active', active.includes('settings'));
+  els.trashBtn.classList.toggle('active', active.includes('trash'));
+}
+
 function showGrid() {
   currentView = 'grid';
   els.workbench.hidden = false;
   els.settingsView.hidden = true;
-  els.homeBtn.classList.add('active');
-  els.settingsBtn.classList.remove('active');
+  els.trashView.hidden = true;
+  setActive('home');
 }
 
 function showSettings() {
   currentView = 'settings';
   els.workbench.hidden = true;
   els.settingsView.hidden = false;
-  els.homeBtn.classList.remove('active');
-  els.settingsBtn.classList.add('active');
+  els.trashView.hidden = true;
+  setActive('settings');
   settingsView.render();
+}
+
+function showTrash(nbId) {
+  const id = nbId || targetNotebookId();
+  if (!id) { ui.toast('还没有可查看的笔记本'); return; }
+  currentView = 'trash';
+  els.workbench.hidden = true;
+  els.settingsView.hidden = true;
+  els.trashView.hidden = false;
+  setActive('trash');
+  renderTrash(id);
+}
+
+function renderTrash(nbId) {
+  trashView.render(nbId || currentTrashId || targetNotebookId());
+  currentTrashId = nbId || currentTrashId;
 }
 
 /* =========================================================
@@ -237,7 +291,6 @@ function showSettings() {
    ========================================================= */
 function renderGrid() {
   const list = sortedNotebooks();
-
   els.wbSub.textContent = `共 ${list.length} 个笔记本 · 点击卡片进入笔记页`;
 
   els.nbGrid.innerHTML = '';
@@ -264,6 +317,7 @@ function buildCard(nb) {
   const li = document.createElement('li');
   li.className = 'nb-card';
   li.dataset.id = nb.id;
+  li.draggable = true;
 
   const main = document.createElement('button');
   main.className = 'nb-card-main';
@@ -302,7 +356,97 @@ function buildCard(nb) {
     openNotebookMenu(nb.id, e.clientX, e.clientY);
   });
 
+  bindCardDrag(li, nb);
   return li;
+}
+
+/* =========================================================
+   拖拽：排序 / 合并到其它笔记本
+   ========================================================= */
+function clearDropMarks() {
+  els.nbGrid.querySelectorAll('.drop-before, .drop-after, .drop-inside')
+    .forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-inside'));
+}
+
+function bindCardDrag(li, nb) {
+  li.addEventListener('dragstart', (e) => {
+    dragState = { id: nb.id };
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', nb.id); } catch (_) {}
+    li.classList.add('dragging');
+  });
+
+  li.addEventListener('dragend', () => {
+    dragState = null;
+    dropTarget = null;
+    li.classList.remove('dragging');
+    clearDropMarks();
+  });
+
+  li.addEventListener('dragover', (e) => {
+    if (!dragState || dragState.id === nb.id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const rect = li.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    let position = 'inside';
+    if (x < rect.width * 0.3) position = 'before';
+    else if (x > rect.width * 0.7) position = 'after';
+
+    clearDropMarks();
+    li.classList.add('drop-' + position);
+    dropTarget = { id: nb.id, position };
+  });
+
+  li.addEventListener('dragleave', (e) => {
+    if (!li.contains(e.relatedTarget)) {
+      li.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    }
+  });
+
+  li.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    if (!dragState || !dropTarget) return;
+    const sourceId = dragState.id;
+    const { id: targetId, position } = dropTarget;
+    dragState = null;
+    dropTarget = null;
+    clearDropMarks();
+
+    if (sourceId === targetId) return;
+    if (position === 'inside') await askMergeNotebooks(sourceId, targetId);
+    else await reorderNotebook(sourceId, targetId, position);
+  });
+}
+
+async function reorderNotebook(sourceId, targetId, position) {
+  const ids = sortedNotebooks().map((n) => n.id).filter((id) => id !== sourceId);
+  const idx = ids.indexOf(targetId);
+  if (idx < 0) return;
+
+  ids.splice(position === 'before' ? idx : idx + 1, 0, sourceId);
+  await reorderNotebooks(ids);
+  renderGrid();
+}
+
+async function askMergeNotebooks(sourceId, targetId) {
+  const source = getNotebook(sourceId);
+  const target = getNotebook(targetId);
+  if (!source || !target) return;
+
+  const count = state.notes.filter((n) => n.notebookId === sourceId).length;
+  const ok = await ui.confirmModal(
+    '合并到另一个笔记本',
+    `把「${source.name}」的 ${count} 条笔记页放进「${target.name}」？\n` +
+    `合并后「${source.name}」会被删除（笔记页本身不会丢失）。`,
+    { confirmText: '合并' }
+  );
+  if (!ok) return;
+
+  const moved = await mergeNotebooks(sourceId, targetId);
+  renderGrid();
+  ui.toast(`已把 ${moved} 条笔记页合并到「${target.name}」`);
 }
 
 /* =========================================================
@@ -318,6 +462,10 @@ function openNotebookMenu(id, x, y) {
     { heading: nb.name },
     { label: '打开', action: () => openNotebook(id) },
     { label: '重命名…', action: () => renameNotebook(id) },
+    {
+      label: trashed ? `回收站（${trashed} 条）` : '回收站',
+      action: () => showTrash(id),
+    },
     { separator: true },
     {
       label: `删除笔记本（${active + trashed} 条笔记）`,
@@ -392,7 +540,7 @@ async function deleteNotebook(id) {
 }
 
 /* =========================================================
-   文件：导出 / 导入 / 清空
+   导入 / 导出（用户数据）
    ========================================================= */
 function targetNotebookId() {
   const saved = readStore(LS_CURRENT_NB, '');
@@ -401,80 +549,77 @@ function targetNotebookId() {
   return list.length ? list[0].id : null;
 }
 
-async function clearAllData() {
-  const first = await ui.confirmModal(
-    '清空所有数据',
-    '将删除所有笔记本、笔记（含回收站）和 AI 配置。此操作不可恢复，建议先导出备份。',
-    { confirmText: '继续', danger: true }
-  );
-  if (!first) return;
+async function handleImport(file) {
+  const lower = (file.name || '').toLowerCase();
 
-  const second = await ui.confirmModal('再次确认', '真的要清空全部数据吗？',
-    { confirmText: '清空', danger: true });
-  if (!second) return;
-
-  try {
-    const nb = await resetAll();
-    writeStore(LS_CURRENT_NB, nb.id);
-    settingsView.render();
+  // .md → 作为全新笔记本导入，笔记本名称 = 文件名
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+    const text = await file.text();
+    const info = await createNotebookFromMarkdown(text, file.name);
     renderGrid();
-    ui.hideToast();
-    ui.toast('已清空所有数据');
-  } catch (err) {
-    console.error('清空失败', err);
-    ui.toast('清空失败：' + err.message);
+    ui.toast(`已新建笔记本「${info.notebook.name}」（${info.count} 条笔记）`);
+    return;
   }
+
+  const data = JSON.parse(await file.text());
+  const payload = readPayload(data);
+  if (payload.kind === 'unknown') throw new Error('文件里没有可导入的内容');
+
+  // 笔记本文件 → 直接作为新笔记本
+  if (payload.kind === 'notebook') {
+    const info = await addNotebookFromPayload(payload.notebook, payload.notes);
+    renderGrid();
+    ui.toast(`已作为新笔记本导入「${info.notebook.name}」（${info.notes} 条笔记）`);
+    return;
+  }
+
+  // 用户数据 → 取并集全部添加
+  const info = await mergeUserData({ notebooks: payload.notebooks, notes: payload.notes });
+
+  // 配置字段：导入后询问保留原有还是覆盖
+  if (payload.settings && payload.settings.ai) {
+    await askConfigMerge(payload.settings.ai);
+    settingsView.render();
+  }
+
+  renderGrid();
+  ui.toast(
+    `导入完成：新增 ${info.notebooks} 个笔记本、${info.notes} 条笔记` +
+    (info.skipped ? `，跳过 ${info.skipped} 条重复` : '')
+  );
 }
 
 /* =========================================================
    事件绑定
    ========================================================= */
 function bindEvents() {
-  els.newNbBtn.addEventListener('click', createNotebookFlow);
-
   els.homeBtn.addEventListener('click', showGrid);
+
   els.settingsBtn.addEventListener('click', () => {
     if (currentView === 'settings') showGrid();
     else showSettings();
   });
 
-  ui.setupDropdown(els.fileBtn, els.fileDropdown, {
-    items: async (action) => {
-      if (action === 'export') {
-        const info = exportBackup();
-        ui.toast(`已导出 ${info.notebooks} 个笔记本、${info.active} 条笔记（含回收站 ${info.trash} 条）`);
-      } else if (action === 'import') {
-        els.importFile.click();
-      } else if (action === 'clear') {
-        await clearAllData();
-      }
-    },
+  els.trashBtn.addEventListener('click', () => {
+    if (currentView === 'trash') showGrid();
+    else showTrash();
+  });
+
+  els.importBtn.addEventListener('click', () => els.importFile.click());
+  els.exportBtn.addEventListener('click', () => {
+    const info = exportUserData();
+    ui.toast(`已导出 ${info.notebooks} 个笔记本、${info.active} 条笔记（含回收站 ${info.trash} 条）与配置`);
   });
 
   els.importFile.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const name = (file.name || '').toLowerCase();
-
     try {
-      if (name.endsWith('.md') || name.endsWith('.markdown')) {
-        const nbId = targetNotebookId();
-        if (!nbId) throw new Error('请先创建一个笔记本');
-        const text = await file.text();
-        const info = await importMarkdown(text, file.name, nbId);
-        renderGrid();
-        const nb = state.notebooks.find((n) => n.id === nbId);
-        ui.toast(`已向「${nb ? nb.name : '笔记本'}」导入 ${info.count} 条笔记，父笔记「${info.rootTitle}」`);
-      } else {
-        const info = await importBackup(file);
-        renderGrid();
-        ui.toast(`导入完成：新增 ${info.added} 条笔记` + (info.skipped ? `，跳过 ${info.skipped} 条重复` : ''));
-      }
+      await handleImport(file);
     } catch (err) {
       console.error('导入失败', err);
       ui.toast('导入失败：' + err.message);
     }
-
     e.target.value = '';
   });
 }

@@ -132,7 +132,9 @@ export async function emptyTrash(nbId, onChanged) {
 
 /* ── 视图组件 ───────────────────────────────── */
 
-export function createTrashView({ root, onChange, onClose }) {
+export function createTrashView({
+  root, onChange, onClose, getNotebookName, closeLabel,
+} = {}) {
   let scopeId = null;
 
   root.innerHTML = `
@@ -142,7 +144,7 @@ export function createTrashView({ root, onChange, onClose }) {
         <div class="trash-head-sub" data-role="count"></div>
       </div>
       <div class="trash-head-actions">
-        <button class="ghost-btn small" data-role="close">返回笔记</button>
+        <button class="ghost-btn small" data-role="close">${closeLabel || '返回笔记'}</button>
         <button class="ghost-btn small danger" data-role="empty">清空回收站</button>
       </div>
     </div>
@@ -161,10 +163,11 @@ export function createTrashView({ root, onChange, onClose }) {
   function render(nbId) {
     scopeId = nbId;
     const deleted = deletedInNotebook(nbId);
+    const nbName = getNotebookName ? getNotebookName(nbId) : '';
 
     el.count.textContent = deleted.length
-      ? `共 ${deleted.length} 条已删除笔记（仅当前笔记本）`
-      : '当前笔记本没有已删除笔记';
+      ? `共 ${deleted.length} 条已删除笔记${nbName ? ` · 笔记本「${nbName}」` : '（仅当前笔记本）'}`
+      : `「${nbName || '当前笔记本'}」没有已删除笔记`;
     el.empty.disabled = !deleted.length;
 
     el.list.innerHTML = '';

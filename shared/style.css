@@ -1052,5 +1052,16 @@
     background: var(--panel);
     position: relative;
     flex-shrink: 0;
+    flex-wrap: wrap;
   }
-  .footer-bar .ghost-btn { flex: none; }
+  .footer-bar .ghost-btn { flex: 0 1 auto; white-space: nowrap; }
+
+  /* 页脚里的文字按钮：空间不够时换行，不再用纯图标 */
+  .sidebar-footer { flex-wrap: wrap; }
+  .sidebar-footer .ghost-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 8px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }

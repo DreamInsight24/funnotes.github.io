@@ -32,16 +32,13 @@ export function initUi() {
       <div class="modal" role="dialog" aria-modal="true">
         <h3 class="modal-title" data-ui="modalTitle"></h3>
         <div class="modal-body" data-ui="modalBody"></div>
-        <div class="modal-foot">
-          <button class="ghost-btn" data-ui="modalCancel">取消</button>
-          <button class="ghost-btn primary" data-ui="modalOk">确定</button>
-        </div>
+        <div class="modal-foot" data-ui="modalFoot"></div>
       </div>
     </div>`;
   while (frag.firstChild) document.body.appendChild(frag.firstChild);
 
   ['toast', 'toastMsg', 'toastAction', 'tip', 'ctxMenu', 'modalMask',
-   'modalTitle', 'modalBody', 'modalCancel', 'modalOk'].forEach((key) => {
+   'modalTitle', 'modalBody', 'modalFoot'].forEach((key) => {
     refs[key] = $(`[data-ui="${key}"]`);
   });
 
@@ -204,7 +201,7 @@ export function openModal(opts) {
   initUi();
   const o = opts || {};
   return new Promise((resolve) => {
-    modalState = { resolve, fields: [] };
+    modalState = { resolve, fields: [], buttons: [], timers: [] };
 
     refs.modalTitle.textContent = o.title || '';
     refs.modalBody.innerHTML = '';
@@ -235,10 +232,30 @@ export function openModal(opts) {
       modalState.fields.push(input);
     });
 
-    refs.modalOk.textContent = o.confirmText || '确定';
-    refs.modalOk.className = 'ghost-btn primary' + (o.danger ? ' danger' : '');
-    refs.modalCancel.textContent = o.cancelText || '取消';
-    refs.modalCancel.hidden = o.hideCancel === true;
+    // 底部按钮：默认「取消 / 确定」，也可以完全自定义
+    const buttons = o.buttons || [
+      { label: o.cancelText || '取消', value: null, hidden: o.hideCancel === true },
+      { label: o.confirmText || '确定', value: true, primary: true, danger: o.danger },
+    ];
+
+    refs.modalFoot.innerHTML = '';
+    buttons.forEach((cfg) => {
+      const btn = document.createElement('button');
+      btn.className = 'ghost-btn' +
+        (cfg.primary ? ' primary' : '') +
+        (cfg.danger ? ' danger' : '');
+      btn.textContent = cfg.label;
+      btn.hidden = cfg.hidden === true;
+      if (cfg.primary) btn.dataset.primary = '1';
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        closeModal(cfg.value);
+      });
+      if (cfg.countdown) startCountdown(btn, cfg);
+      refs.modalFoot.appendChild(btn);
+      modalState.buttons.push(btn);
+    });
+
     refs.modalMask.hidden = false;
 
     setTimeout(() => {
@@ -247,17 +264,43 @@ export function openModal(opts) {
         modalState.fields[0].focus();
         modalState.fields[0].select();
       } else {
-        refs.modalOk.focus();
+        const first = modalState.buttons.find((b) => !b.disabled && !b.hidden);
+        if (first) first.focus();
       }
     }, 30);
   });
 }
 
+/** 危险按钮：先禁用 N 秒才可点击 */
+function startCountdown(btn, cfg) {
+  let left = Number(cfg.countdown) || 0;
+  const label = cfg.label;
+  btn.disabled = true;
+  btn.textContent = `${label}（${left}s）`;
+
+  const timer = setInterval(() => {
+    left -= 1;
+    if (!modalState) { clearInterval(timer); return; }
+    if (left <= 0) {
+      clearInterval(timer);
+      btn.disabled = false;
+      btn.textContent = label;
+      if (!modalState.fields.length) btn.focus();
+      return;
+    }
+    btn.textContent = `${label}（${left}s）`;
+  }, 1000);
+
+  modalState.timers.push(timer);
+}
+
 export function closeModal(result) {
   if (!modalState) return;
-  const { resolve } = modalState;
+  const { resolve, timers } = modalState;
+  (timers || []).forEach((t) => clearInterval(t));
   modalState = null;
   refs.modalMask.hidden = true;
+  refs.modalFoot.innerHTML = '';
   refs.modalBody.innerHTML = '';
   resolve(result);
 }
@@ -270,17 +313,17 @@ function submitModal() {
   if (!modalState) return;
   if (modalState.fields.length) {
     closeModal(modalState.fields.map((f) => f.value));
-  } else {
-    closeModal(true);
+    return;
   }
+  const enabled = modalState.buttons.filter((b) => !b.disabled && !b.hidden);
+  const target = enabled.find((b) => b.dataset.primary === '1') || enabled[0];
+  if (target) target.click();
 }
 
 function bindModal() {
   refs.modalMask.addEventListener('mousedown', (e) => {
     if (e.target === refs.modalMask) closeModal(null);
   });
-  refs.modalOk.addEventListener('click', submitModal);
-  refs.modalCancel.addEventListener('click', () => closeModal(null));
 
   document.addEventListener('keydown', (e) => {
     if (!modalState) return;

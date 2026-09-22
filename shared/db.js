@@ -6,6 +6,8 @@
 
 import {
   genId, genNbId, DEFAULT_NOTEBOOK_NAME, escapeHtml, sanitizeHtml,
+  sortNotebooks, nextOrder, readStore, writeStore, removeStore,
+  readAiSettings, AI_STORAGE, LS_CURRENT_NB,
 } from './utils.js';
 
 const DB_NAME = 'progressive-notes';
@@ -114,9 +116,18 @@ export async function loadAll() {
       name: DEFAULT_NOTEBOOK_NAME,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      order: 0,
     };
     state.notebooks.push(nb);
     await DB.putNotebook(nb).catch(() => {});
+  }
+
+  // 老数据补 order（按创建时间排一遍）
+  if (state.notebooks.some((nb) => nb.order === undefined)) {
+    sortNotebooks(state.notebooks).forEach((nb, i) => { nb.order = i; });
+    for (const nb of state.notebooks) {
+      await DB.putNotebook(nb).catch(() => {});
+    }
   }
 
   const ids = new Set(state.notebooks.map((n) => n.id));
@@ -139,7 +150,7 @@ export function getNotebook(id) {
 }
 
 export function sortedNotebooks() {
-  return state.notebooks.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  return sortNotebooks(state.notebooks);
 }
 
 export function notesInNotebook(nbId, { includeDeleted = false } = {}) {
@@ -183,10 +194,44 @@ export async function createNotebook(name) {
     name: String(name || DEFAULT_NOTEBOOK_NAME).trim() || DEFAULT_NOTEBOOK_NAME,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    order: nextOrder(state.notebooks),
   };
   state.notebooks.push(nb);
   await DB.putNotebook(nb);
   return nb;
+}
+
+/** 按当前顺序重排 order 并落库 */
+export async function reorderNotebooks(orderedIds) {
+  const changed = [];
+  orderedIds.forEach((id, i) => {
+    const nb = state.notebooks.find((n) => n.id === id);
+    if (!nb || nb.order === i) return;
+    nb.order = i;
+    changed.push(nb);
+  });
+  for (const nb of changed) await DB.putNotebook(nb);
+  return changed.length;
+}
+
+/** 把源笔记本里的全部笔记页放进目标笔记本（含回收站中的），并删除源笔记本 */
+export async function mergeNotebooks(sourceId, targetId) {
+  if (!sourceId || !targetId || sourceId === targetId) return 0;
+  if (!getNotebook(sourceId) || !getNotebook(targetId)) return 0;
+
+  const moved = state.notes.filter((n) => n.notebookId === sourceId);
+  const now = Date.now();
+  moved.forEach((n) => {
+    n.notebookId = targetId;
+    n.updatedAt = now;
+  });
+  await saveNotes(moved);
+
+  await deleteNotebookCascade(sourceId);
+
+  // 重排剩余笔记本顺序
+  await reorderNotebooks(sortedNotebooks().map((nb) => nb.id));
+  return moved.length;
 }
 
 /**
@@ -209,120 +254,227 @@ export async function clearAll() {
   await DB.clearNotebooks();
 }
 
-/** 清空所有数据后重建一个笔记本（工作台与笔记页共用） */
-export async function resetAll() {
-  await clearAll();
-  state.notes = [];
-  state.notebooks = [];
-  return createNotebook(DEFAULT_NOTEBOOK_NAME);
-}
+/* ── 导出（两个页面共用） ───────────────────── */
 
-/* ── 导出 / 导入（两个页面共用） ─────────────── */
-
-export function exportBackup() {
-  const payload = {
-    app: 'funnotes',
-    version: 4,
-    exportedAt: new Date().toISOString(),
-    notebooks: state.notebooks,
-    notes: state.notes,
-  };
-
+function downloadJSON(payload, filename) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `funnotes-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-
-  const active = state.notes.filter((n) => !n.deletedAt).length;
-  const trash = state.notes.filter((n) => n.deletedAt).length;
-  return { notebooks: state.notebooks.length, active, trash };
 }
 
-/** 导入 JSON 备份，返回 { added, skipped } */
-export async function importBackup(file) {
-  const text = await file.text();
-  const data = JSON.parse(text);
+/** 用户数据（全部笔记本 + 全部笔记 + 配置） */
+export function exportUserData() {
+  const payload = {
+    app: 'funnotes',
+    kind: 'backup',
+    version: 4,
+    exportedAt: new Date().toISOString(),
+    notebooks: state.notebooks,
+    notes: state.notes,
+    settings: {
+      ai: readAiSettings(),
+      currentNotebook: readStore(LS_CURRENT_NB, ''),
+    },
+  };
+  downloadJSON(payload, `funnotes-data-${new Date().toISOString().slice(0, 10)}.json`);
 
-  let incomingNotebooks = [];
-  let incomingNotes = [];
+  return {
+    notebooks: state.notebooks.length,
+    active: state.notes.filter((n) => !n.deletedAt).length,
+    trash: state.notes.filter((n) => n.deletedAt).length,
+  };
+}
 
+/** 单个笔记本（笔记本信息 + 该笔记本的所有笔记，含回收站） */
+export function exportNotebook(nbId) {
+  const nb = getNotebook(nbId);
+  if (!nb) throw new Error('笔记本不存在');
+
+  const notes = state.notes.filter((n) => n.notebookId === nbId);
+  const payload = {
+    app: 'funnotes',
+    kind: 'notebook',
+    version: 4,
+    exportedAt: new Date().toISOString(),
+    notebook: nb,
+    notes,
+  };
+  const safeName = String(nb.name || 'notebook').replace(/[\\/:*?"<>|]/g, '_');
+  downloadJSON(payload, `${safeName}-${new Date().toISOString().slice(0, 10)}.json`);
+
+  return { name: nb.name, notes: notes.length };
+}
+
+/* ── 导入 ───────────────────────────────────── */
+
+/** 识别 JSON 文件类型，返回 { kind, notebooks, notes, notebook, settings } */
+export function readPayload(data) {
   if (Array.isArray(data)) {
-    incomingNotes = data;
-  } else if (data && typeof data === 'object') {
-    incomingNotebooks = Array.isArray(data.notebooks) ? data.notebooks : [];
-    incomingNotes = Array.isArray(data.notes) ? data.notes : [];
+    return { kind: 'backup', notebooks: [], notes: data, settings: null };
+  }
+  if (!data || typeof data !== 'object') {
+    return { kind: 'unknown', notebooks: [], notes: [], settings: null };
   }
 
-  if (!incomingNotebooks.length && !incomingNotes.length) {
-    throw new Error('文件里没有可导入的内容');
+  const notes = Array.isArray(data.notes) ? data.notes : [];
+
+  if (data.kind === 'notebook' && data.notebook && typeof data.notebook === 'object') {
+    return { kind: 'notebook', notebook: data.notebook, notebooks: [], notes, settings: null };
   }
 
-  const nbIdMap = new Map();
+  const notebooks = Array.isArray(data.notebooks) ? data.notebooks : [];
+  if (!notebooks.length && !notes.length) {
+    return { kind: 'unknown', notebooks: [], notes: [], settings: null };
+  }
+  return { kind: 'backup', notebooks, notes, settings: data.settings || null };
+}
+
+export async function readPayloadFile(file) {
+  const text = await file.text();
+  return readPayload(JSON.parse(text));
+}
+
+function prepareNotes(incoming, { notebookId, nbIdMap, fallbackNbId, dedupe }) {
+  const existing = new Set(state.notes.map((n) => n.id));
+  const prepared = incoming
+    .filter((n) => n && typeof n === 'object')
+    .map((n) => ({ ...n, id: (typeof n.id === 'string' && n.id) ? n.id : genId() }));
+
+  const idMap = new Map();
+  const skipped = [];
+  const kept = [];
+  prepared.forEach((n) => {
+    if (dedupe && existing.has(n.id)) { skipped.push(n.id); return; }
+    const newId = existing.has(n.id) ? genId() : n.id;
+    idMap.set(n.id, newId);
+    existing.add(newId);
+    kept.push(n);
+  });
+
+  const out = kept.map((n) => {
+    const note = {
+      id: idMap.get(n.id),
+      notebookId: notebookId || (nbIdMap && nbIdMap.get(n.notebookId)) || fallbackNbId,
+      parentId: n.parentId ? (idMap.get(n.parentId) || null) : null,
+      order: Number(n.order) || 0,
+      title: String(n.title ?? ''),
+      content: String(n.content ?? ''),
+      tags: Array.isArray(n.tags) ? n.tags.map(String) : [],
+      createdAt: Number(n.createdAt) || Date.now(),
+      updatedAt: Number(n.updatedAt) || Date.now(),
+    };
+    if (n.deletedAt) note.deletedAt = Number(n.deletedAt);
+    return note;
+  });
+
+  return { notes: out, skipped: skipped.length };
+}
+
+/**
+ * 合并用户数据（取并集：同 id 的内容视为已存在，不重复导入）
+ * 返回 { notebooks, notes, skipped }
+ */
+export async function mergeUserData({ notebooks = [], notes = [] }) {
   const existingNbIds = new Set(state.notebooks.map((n) => n.id));
+  const nbIdMap = new Map();
+  const addedNotebooks = [];
+  let skippedNotebooks = 0;
 
-  for (const raw of incomingNotebooks) {
-    if (!raw || typeof raw !== 'object') continue;
-    const id = (typeof raw.id === 'string' && raw.id) ? raw.id : genNbId();
-    const finalId = existingNbIds.has(id) ? genNbId() : id;
-    nbIdMap.set(id, finalId);
-    existingNbIds.add(finalId);
+  notebooks.forEach((raw) => {
+    if (!raw || typeof raw !== 'object') return;
+    const oldId = (typeof raw.id === 'string' && raw.id) ? raw.id : genNbId();
+    if (existingNbIds.has(oldId)) { skippedNotebooks++; nbIdMap.set(oldId, oldId); return; }
+    existingNbIds.add(oldId);
+    nbIdMap.set(oldId, oldId);
 
-    state.notebooks.push({
-      id: finalId,
+    const nb = {
+      id: oldId,
       name: String(raw.name || '未命名笔记本'),
       createdAt: Number(raw.createdAt) || Date.now(),
       updatedAt: Number(raw.updatedAt) || Date.now(),
-    });
-  }
+      order: nextOrder(state.notebooks),
+    };
+    state.notebooks.push(nb);
+    addedNotebooks.push(nb);
+  });
 
   let fallbackNbId = state.notebooks[0] ? state.notebooks[0].id : null;
   if (!fallbackNbId) {
-    const nb = await createNotebook('导入的笔记');
+    const nb = await createNotebook(DEFAULT_NOTEBOOK_NAME);
     fallbackNbId = nb.id;
   }
 
-  const existingNoteIds = new Set(state.notes.map((n) => n.id));
-  const added = [];
-  let skipped = 0;
-
-  for (const raw of incomingNotes) {
-    if (!raw || typeof raw !== 'object') continue;
-
-    const id = (typeof raw.id === 'string' && raw.id) ? raw.id : genId();
-    if (existingNoteIds.has(id)) { skipped++; continue; }
-    existingNoteIds.add(id);
-
-    const note = {
-      id,
-      notebookId: nbIdMap.get(raw.notebookId) || fallbackNbId,
-      parentId: raw.parentId || null,
-      order: Number(raw.order) || 0,
-      title: String(raw.title ?? ''),
-      content: String(raw.content ?? ''),
-      tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
-      createdAt: Number(raw.createdAt) || Date.now(),
-      updatedAt: Number(raw.updatedAt) || Date.now(),
-    };
-    if (raw.deletedAt) note.deletedAt = Number(raw.deletedAt);
-    state.notes.push(note);
-    added.push(note);
-  }
-
-  const addedIds = new Set(added.map((n) => n.id));
-  added.forEach((n) => {
-    if (n.parentId && !addedIds.has(n.parentId) && !existingNoteIds.has(n.parentId)) {
-      n.parentId = null;
-    }
+  const { notes: addedNotes, skipped } = prepareNotes(notes, {
+    nbIdMap, fallbackNbId, dedupe: true,
   });
 
-  for (const nb of state.notebooks) await saveNotebook(nb);
-  await saveNotes(added);
-  return { added: added.length, skipped };
+  state.notes.push(...addedNotes);
+  for (const nb of addedNotebooks) await saveNotebook(nb);
+  await saveNotes(addedNotes);
+
+  return {
+    notebooks: addedNotebooks.length,
+    notes: addedNotes.length,
+    skipped,
+    skippedNotebooks,
+  };
+}
+
+/** 把文件里的笔记本作为全新笔记本导入（id 冲突时自动换新 id） */
+export async function addNotebookFromPayload(notebook, notes) {
+  const rawName = String((notebook && notebook.name) || '导入的笔记本');
+  const updatedAt = Number((notebook && notebook.updatedAt)) || Date.now();
+
+  const nb = await createNotebook(rawName);
+  nb.createdAt = Number((notebook && notebook.createdAt)) || nb.createdAt;
+  nb.updatedAt = updatedAt;
+  await saveNotebook(nb);
+
+  const { notes: addedNotes } = prepareNotes(notes, {
+    notebookId: nb.id,
+    fallbackNbId: nb.id,
+  });
+
+  state.notes.push(...addedNotes);
+  await saveNotes(addedNotes);
+  await reorderNotebooks(sortedNotebooks().map((n) => n.id));
+
+  return { notebook: nb, notes: addedNotes.length };
+}
+
+/** 把文件里的笔记页放进指定笔记本（例如「放入当前笔记本」） */
+export async function addNotesIntoNotebook(notebookId, notes) {
+  if (!getNotebook(notebookId)) throw new Error('目标笔记本不存在');
+  const { notes: addedNotes } = prepareNotes(notes, {
+    notebookId,
+    fallbackNbId: notebookId,
+  });
+  state.notes.push(...addedNotes);
+  await saveNotes(addedNotes);
+  return { notes: addedNotes.length };
+}
+
+/* ── 删除所有用户数据 ───────────────────────── */
+
+export async function deleteAllUserData() {
+  await clearAll();
+  state.notes = [];
+  state.notebooks = [];
+
+  removeStore(AI_STORAGE.base);
+  removeStore(AI_STORAGE.model);
+  removeStore(AI_STORAGE.key);
+  removeStore(LS_CURRENT_NB);
+
+  const nb = await createNotebook(DEFAULT_NOTEBOOK_NAME);
+  writeStore(LS_CURRENT_NB, nb.id);
+  return nb;
 }
 
 /* ── Markdown 导入 ──────────────────────────── */
@@ -477,4 +629,22 @@ export async function importMarkdown(text, fileName, notebookId) {
   await saveNotes(created);
   state.notes.push(...created);
   return { count: created.length, rootTitle: created[0].title || '未命名', rootId: created[0].id };
+}
+
+/**
+ * 把一个 .md 文件当作全新笔记本导入：
+ * 笔记本名称 = 文件名，笔记本内的层级逻辑与其它地方完全一致
+ */
+export async function createNotebookFromMarkdown(text, fileName) {
+  const base = String(fileName || '').replace(/\.(md|markdown|txt)$/i, '').trim() || '导入的笔记本';
+  const nb = await createNotebook(base);
+  try {
+    const info = await importMarkdown(text, fileName, nb.id);
+    await reorderNotebooks(sortedNotebooks().map((n) => n.id));
+    return { notebook: nb, ...info };
+  } catch (err) {
+    // 导入失败就不留下空笔记本
+    await deleteNotebookCascade(nb.id);
+    throw err;
+  }
 }

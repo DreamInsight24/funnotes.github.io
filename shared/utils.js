@@ -100,11 +100,15 @@ export function parseTags(str) {
   return [...new Set(String(str || '').split(/[,，]/).map((s) => s.trim()).filter(Boolean))];
 }
 
-/** 全部标签（按名称排序），返回 [{ name, count }] */
-export function allTags(notes) {
+/**
+ * 标签列表（按名称排序），返回 [{ name, count }]
+ * notebookId 传入时只统计该笔记本内的标签
+ */
+export function allTags(notes, notebookId) {
   const map = new Map();
   notes.forEach((n) => {
     if (n.deletedAt) return;
+    if (notebookId && n.notebookId !== notebookId) return;
     (n.tags || []).forEach((raw) => {
       const name = String(raw || '').trim();
       if (!name) return;
@@ -116,15 +120,20 @@ export function allTags(notes) {
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
 }
 
-export function tagUsage(notes, name) {
-  return notes.filter((n) => !n.deletedAt && (n.tags || []).includes(name)).length;
+export function tagUsage(notes, name, notebookId) {
+  return notes.filter((n) => {
+    if (n.deletedAt) return false;
+    if (notebookId && n.notebookId !== notebookId) return false;
+    return (n.tags || []).includes(name);
+  }).length;
 }
 
-/** 批量改标签名，返回被改动的笔记数组（不落库，由调用方保存） */
-export function renameTagIn(notes, oldName, newName) {
+/** 批量改标签名（可限定笔记本），返回被改动的笔记数组（不落库，由调用方保存） */
+export function renameTagIn(notes, oldName, newName, notebookId) {
   const touched = [];
   notes.forEach((n) => {
     if (n.deletedAt) return;
+    if (notebookId && n.notebookId !== notebookId) return;
     const tags = n.tags || [];
     if (!tags.includes(oldName)) return;
     n.tags = [...new Set(tags.map((t) => (t === oldName ? newName : t)))];
@@ -134,11 +143,12 @@ export function renameTagIn(notes, oldName, newName) {
   return touched;
 }
 
-/** 批量移除标签，返回被改动的笔记数组（不落库） */
-export function removeTagIn(notes, name) {
+/** 批量移除标签（可限定笔记本），返回被改动的笔记数组（不落库） */
+export function removeTagIn(notes, name, notebookId) {
   const touched = [];
   notes.forEach((n) => {
     if (n.deletedAt) return;
+    if (notebookId && n.notebookId !== notebookId) return;
     const tags = n.tags || [];
     if (!tags.includes(name)) return;
     n.tags = tags.filter((t) => t !== name);
@@ -146,6 +156,23 @@ export function removeTagIn(notes, name) {
     touched.push(n);
   });
   return touched;
+}
+
+/* ── 笔记本排序 ─────────────────────────────── */
+
+/** 按 order 排序（没有 order 的旧数据退回 createdAt） */
+export function sortNotebooks(list) {
+  return list.slice().sort((a, b) => {
+    const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+}
+
+/** 追加到末尾时使用的新 order */
+export function nextOrder(list) {
+  return list.length ? Math.max(...list.map((x) => x.order ?? 0)) + 1 : 0;
 }
 
 /* ── 笔记树 ─────────────────────────────────── */

@@ -25,10 +25,10 @@
     <ul class="note-list" id="noteList"></ul>
 
     <div class="sidebar-footer">
-      <button class="footer-icon-btn" id="nbBtn" data-tip="切换笔记本（不离开页面）" aria-label="切换笔记本">📓</button>
-      <button class="footer-icon-btn" id="settingsBtn" data-tip="设置：AI 配置、标签管理" aria-label="设置">⚙️</button>
-      <button class="footer-icon-btn" id="trashBtn" data-tip="回收站：左键打开，右键查看更多" aria-label="回收站">🗑️</button>
-      <button class="ghost-btn" id="fileBtn" data-tip="文件：导入 / 导出 / 清空数据">📁 文件</button>
+      <button class="ghost-btn" id="nbBtn" data-tip="切换笔记本（不离开页面）">📓 笔记本</button>
+      <button class="ghost-btn" id="trashBtn" data-tip="回收站：左键打开，右键可清空">🗑️ 回收站</button>
+      <button class="ghost-btn" id="settingsBtn" data-tip="设置：AI 配置、数据管理">⚙️ 设置</button>
+      <button class="ghost-btn" id="fileBtn" data-tip="导入 / 导出当前笔记本">📁 文件</button>
 
       <div class="footer-dropdown" id="nbDropdown" hidden></div>
 
@@ -39,10 +39,8 @@
       </div>
 
       <div class="footer-dropdown" id="fileDropdown" hidden>
-        <button data-action="export">导出备份</button>
-        <button data-action="import">导入文件（.json / .md）</button>
-        <div class="dropdown-divider"></div>
-        <button data-action="clear" class="danger">清空所有数据</button>
+        <button data-action="import">导入文件（.md / .json）</button>
+        <button data-action="export">导出当前笔记本</button>
       </div>
 
       <input type="file" id="importFile"
@@ -132,11 +130,14 @@ import {
 } from './shared/utils.js';
 import {
   state, loadAll, getNotebook, sortedNotebooks, notesInNotebook, mostRecentNoteId,
-  saveNote, createNotebook, exportBackup, importBackup, importMarkdown,
-  resetAll,
+  saveNote, createNotebook, exportNotebook, importMarkdown,
+  readPayload, mergeUserData, addNotebookFromPayload, addNotesIntoNotebook,
+  deleteAllUserData,
 } from './shared/db.js';
 import * as ui from './shared/ui.js';
-import { createSettingsView, createTagPanel, onTagsChanged } from './shared/settings.js';
+import {
+  createSettingsView, createTagPanel, onTagsChanged, askConfigMerge,
+} from './shared/settings.js';
 import { createTrashView, softDeleteNote, emptyTrash } from './shared/trash.js';
 
 ui.initUi();
@@ -246,6 +247,8 @@ function initComponents() {
       return ((note && note.tags) || []).join(', ');
     },
     onInput: () => scheduleSave(),
+    // 标签只统计当前笔记本
+    getScopeNotebookId: () => currentNotebookId,
   });
   tagPanel.close();
 
@@ -263,6 +266,11 @@ function initComponents() {
     onClose: () => showNotesView(),
     onChanged: () => renderList(),
     onAiChanged: () => updateAIBtn(),
+    getScopeNotebookId: () => currentNotebookId,
+    onWipe: async () => {
+      await deleteAllUserData();
+      await goWorkbench(true);
+    },
   });
 
   // 标签被改名 / 删除后，笔记树（标签搜索）与当前编辑器同步刷新
@@ -342,8 +350,8 @@ async function createNotebookFlow() {
   ui.toast(`已创建并切换到「${nb.name}」`);
 }
 
-async function goWorkbench() {
-  await flushSave();            // 跳转前必须等保存完成
+async function goWorkbench(skipFlush) {
+  if (!skipFlush) await flushSave();   // 跳转前必须等保存完成
   location.href = './index.html';
 }
 
@@ -961,49 +969,72 @@ async function deleteNoteById(id) {
 }
 
 /* =========================================================
-   文件：导出 / 导入 / 清空
+   文件：导入 / 导出（清空数据只在「设置」里）
    ========================================================= */
-async function clearAllData() {
-  const first = await ui.confirmModal(
-    '清空所有数据',
-    '将删除所有笔记本、笔记（含回收站）和 AI 配置。此操作不可恢复，建议先导出备份。',
-    { confirmText: '继续', danger: true }
-  );
-  if (!first) return;
+function currentNbName() {
+  const nb = getNotebook(currentNotebookId);
+  return nb ? nb.name : '当前笔记本';
+}
 
-  const second = await ui.confirmModal('再次确认', '真的要清空全部数据吗？',
-    { confirmText: '清空', danger: true });
-  if (!second) return;
+async function handleImportFile(file) {
+  const lower = (file.name || '').toLowerCase();
 
-  await flushSave();
-
-  try {
-    const nb = await resetAll();
-    currentNotebookId = nb.id;
-    writeStore(LS_CURRENT_NB, nb.id);
-    syncUrl();
-    updateBrand();
-
-    currentId = null;
-    lastSelectedId = null;
-    collapsedIds.clear();
-    els.searchInput.value = '';
-    els.titleInput.value = '';
-    els.contentInput.innerHTML = '';
-    tagPanel.setValue('');
-    els.saveStatus.textContent = '';
-
-    renderNotebookDropdown();
-    settingsView.render();
-    updateAIBtn();
-    showEmpty();
+  // .md → 放进当前笔记本（笔记本内的层级逻辑与其它 md 一致）
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+    const text = await file.text();
+    const info = await importMarkdown(text, file.name, currentNotebookId);
     renderList();
-    ui.hideToast();
-    ui.toast('已清空所有数据');
-  } catch (err) {
-    console.error('清空失败', err);
-    ui.toast('清空失败：' + err.message);
+    selectNote(info.rootId);
+    ui.toast(`已导入 ${info.count} 条笔记，父笔记「${info.rootTitle}」`);
+    return;
   }
+
+  const payload = readPayload(JSON.parse(await file.text()));
+  if (payload.kind === 'unknown') throw new Error('文件里没有可导入的内容');
+
+  // 笔记本文件 → 询问：新建笔记本 / 放进当前笔记本
+  if (payload.kind === 'notebook') {
+    const nbName = (payload.notebook && payload.notebook.name) || '导入的笔记本';
+    const target = currentNbName();
+
+    const choice = await ui.openModal({
+      title: '导入笔记本',
+      message:
+        `文件里是笔记本「${nbName}」，共 ${payload.notes.length} 条笔记页。\n\n` +
+        '选择「新建笔记本」会单独建一个新笔记本；' +
+        `选择「放进${target}」会把这些笔记页全部放进当前笔记本。`,
+      buttons: [
+        { label: '新建笔记本', value: 'new', primary: true },
+        { label: `放进「${target}」`, value: 'into' },
+      ],
+    });
+    if (!choice) return;
+
+    if (choice === 'new') {
+      const info = await addNotebookFromPayload(payload.notebook, payload.notes);
+      renderNotebookDropdown();
+      ui.toast(`已新建笔记本「${info.notebook.name}」（${info.notes} 条笔记），可在页脚切换`);
+      return;
+    }
+
+    const info = await addNotesIntoNotebook(currentNotebookId, payload.notes);
+    renderList();
+    ui.toast(`已把 ${info.notes} 条笔记页放进「${target}」`);
+    return;
+  }
+
+  // 用户数据（全部笔记本 + 配置）→ 取并集导入
+  const info = await mergeUserData({ notebooks: payload.notebooks, notes: payload.notes });
+  if (payload.settings && payload.settings.ai) {
+    await askConfigMerge(payload.settings.ai);
+    updateAIBtn();
+  }
+  renderNotebookDropdown();
+  renderList();
+  ui.toast(
+    `导入完成：新增 ${info.notebooks} 个笔记本、${info.notes} 条笔记` +
+    (info.skipped ? `，跳过 ${info.skipped} 条重复` : '')
+  );
 }
 
 /* =========================================================
@@ -1281,12 +1312,11 @@ function bindEvents() {
   ui.setupDropdown(els.fileBtn, els.fileDropdown, {
     items: async (action) => {
       if (action === 'export') {
-        const info = exportBackup();
-        ui.toast(`已导出 ${info.notebooks} 个笔记本、${info.active} 条笔记（含回收站 ${info.trash} 条）`);
+        await flushSave();
+        const info = exportNotebook(currentNotebookId);
+        ui.toast(`已导出笔记本「${info.name}」（${info.notes} 条笔记）`);
       } else if (action === 'import') {
         els.importFile.click();
-      } else if (action === 'clear') {
-        await clearAllData();
       }
     },
   });
@@ -1294,21 +1324,9 @@ function bindEvents() {
   els.importFile.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const name = (file.name || '').toLowerCase();
 
     try {
-      if (name.endsWith('.md') || name.endsWith('.markdown')) {
-        const text = await file.text();
-        const info = await importMarkdown(text, file.name, currentNotebookId);
-        renderList();
-        selectNote(info.rootId);
-        ui.toast(`已导入 ${info.count} 条笔记，父笔记「${info.rootTitle}」`);
-      } else {
-        const info = await importBackup(file);
-        renderNotebookDropdown();
-        renderList();
-        ui.toast(`导入完成：新增 ${info.added} 条笔记` + (info.skipped ? `，跳过 ${info.skipped} 条重复` : ''));
-      }
+      await handleImportFile(file);
     } catch (err) {
       console.error('导入失败', err);
       ui.toast('导入失败：' + err.message);

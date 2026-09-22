@@ -29,25 +29,26 @@ function emitTagsChanged() {
 
 /* ── 标签批量操作 ───────────────────────────── */
 
-export async function renameTagEverywhere(oldName, newName) {
-  const touched = renameTagIn(state.notes, oldName, newName);
+export async function renameTagEverywhere(oldName, newName, scopeNotebookId) {
+  const touched = renameTagIn(state.notes, oldName, newName, scopeNotebookId);
   await saveNotes(touched);
   emitTagsChanged();
   return touched.length;
 }
 
-export async function removeTagEverywhere(name) {
-  const touched = removeTagIn(state.notes, name);
+export async function removeTagEverywhere(name, scopeNotebookId) {
+  const touched = removeTagIn(state.notes, name, scopeNotebookId);
   await saveNotes(touched);
   emitTagsChanged();
   return touched.length;
 }
 
-export async function askRenameTag(oldName) {
-  const usage = tagUsage(state.notes, oldName);
+export async function askRenameTag(oldName, scopeNotebookId) {
+  const usage = tagUsage(state.notes, oldName, scopeNotebookId);
+  const scopeText = scopeNotebookId ? '当前笔记本内' : '全部笔记中';
   const next = await ui.promptModal('重命名标签', oldName, {
     message: usage
-      ? `「${oldName}」正在被 ${usage} 条笔记使用。改名后会同步更新这 ${usage} 条笔记的标签。`
+      ? `「${oldName}」在${scopeText}被 ${usage} 条笔记使用。改名后会同步更新这 ${usage} 条笔记的标签。`
       : `重命名标签「${oldName}」。`,
     label: '新标签名',
     confirmText: '改名',
@@ -56,45 +57,45 @@ export async function askRenameTag(oldName) {
   if (!next) { ui.toast('标签名不能为空'); return; }
   if (next === oldName) return;
 
-  const willMerge = allTags(state.notes).some((t) => t.name === next);
+  const willMerge = allTags(state.notes, scopeNotebookId).some((t) => t.name === next);
   if (willMerge) {
     const ok = await ui.confirmModal(
       '合并标签？',
-      `已经存在标签「${next}」，继续会把「${oldName}」合并进它（影响 ${usage} 条笔记）。`,
+      `已经存在标签「${next}」，继续会把「${oldName}」合并进它（${scopeText}影响 ${usage} 条笔记）。`,
       { confirmText: '合并' }
     );
     if (!ok) return;
   }
 
-  const count = await renameTagEverywhere(oldName, next);
+  const count = await renameTagEverywhere(oldName, next, scopeNotebookId);
   ui.toast(`已把「${oldName}」改为「${next}」，同步 ${count} 条笔记`);
 }
 
-export async function askDeleteTag(name) {
-  const usage = tagUsage(state.notes, name);
+export async function askDeleteTag(name, scopeNotebookId) {
+  const usage = tagUsage(state.notes, name, scopeNotebookId);
   const ok = await ui.confirmModal(
     '删除标签',
-    `从 ${usage} 条笔记中移除标签「${name}」？笔记本身不会被删除。`,
+    `从当前笔记本的 ${usage} 条笔记中移除标签「${name}」？笔记本身不会被删除。`,
     { confirmText: '删除', danger: true }
   );
   if (!ok) return;
 
-  const count = await removeTagEverywhere(name);
+  const count = await removeTagEverywhere(name, scopeNotebookId);
   ui.toast(`已删除标签「${name}」，更新 ${count} 条笔记`);
 }
 
-export function openTagMenu(name, x, y) {
+export function openTagMenu(name, x, y, scopeNotebookId) {
   ui.openCtxMenu(x, y, [
     { heading: `标签「${name}」` },
-    { label: '重命名标签…', action: () => askRenameTag(name) },
+    { label: '重命名标签…', action: () => askRenameTag(name, scopeNotebookId) },
     { separator: true },
-    { label: '删除标签（保留笔记）', danger: true, action: () => askDeleteTag(name) },
+    { label: '删除标签（保留笔记）', danger: true, action: () => askDeleteTag(name, scopeNotebookId) },
   ]);
 }
 
 /* ── 标签面板（编辑区） ─────────────────────── */
 
-export function createTagPanel(host, { getValue, setValue, onInput } = {}) {
+export function createTagPanel(host, { getValue, onInput, getScopeNotebookId } = {}) {
   host.innerHTML = `
     <div class="field">
       <span class="field-label">标签（用逗号分隔；右键标签可改名）</span>
@@ -186,13 +187,14 @@ export function createTagPanel(host, { getValue, setValue, onInput } = {}) {
 
   function renderPicker() {
     const chosen = new Set(parseTags(input.value));
-    const list = allTags(state.notes);
+    const scope = getScopeNotebookId ? getScopeNotebookId() : null;
+    const list = allTags(state.notes, scope);
     picker.innerHTML = '';
 
     if (!list.length) {
       const empty = document.createElement('div');
       empty.className = 'tag-picker-empty';
-      empty.textContent = '还没有已有标签，可以从下面新建一个。';
+      empty.textContent = '当前笔记本还没有标签，可以从下面新建一个。';
       picker.appendChild(empty);
     }
 
@@ -216,7 +218,7 @@ export function createTagPanel(host, { getValue, setValue, onInput } = {}) {
       row.addEventListener('click', () => toggleTag(tag.name, row));
       row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        openTagMenu(tag.name, e.clientX, e.clientY);
+        openTagMenu(tag.name, e.clientX, e.clientY, scope);
       });
       picker.appendChild(row);
     });
@@ -238,7 +240,40 @@ export function createTagPanel(host, { getValue, setValue, onInput } = {}) {
 
 /* ── 设置视图 ───────────────────────────────── */
 
-export function createSettingsView({ root, onClose, onChanged, onAiChanged } = {}) {
+/**
+ * 导入用户数据后，询问配置字段要「保留原有」还是「用导入的覆盖」
+ * 返回 'keep' | 'overwrite'
+ */
+export async function askConfigMerge(importedAi) {
+  if (!importedAi || typeof importedAi !== 'object') return 'keep';
+
+  const fields = [];
+  if (importedAi.base) fields.push('API Base');
+  if (importedAi.model) fields.push('模型');
+  if (importedAi.key) fields.push('API Key');
+  if (!fields.length) return 'keep';
+
+  const overwrite = await ui.confirmModal(
+    '导入文件里带有配置',
+    `导入的数据包含 AI 配置（${fields.join(' / ')}）。\n\n` +
+    '选择「用导入的设置覆盖」会替换你现在的配置；' +
+    '选择「保留原有设置」则继续使用当前配置。',
+    { confirmText: '用导入的设置覆盖', cancelText: '保留原有设置' }
+  );
+
+  if (!overwrite) return 'keep';
+
+  writeAiSettings({
+    base: importedAi.base || '',
+    model: importedAi.model || '',
+    key: importedAi.key || '',
+  });
+  return 'overwrite';
+}
+
+export function createSettingsView({
+  root, onClose, onChanged, onAiChanged, onWipe, getScopeNotebookId,
+} = {}) {
   root.innerHTML = `
     <div class="settings-head">
       <h2 class="settings-title">⚙️ 设置</h2>
@@ -267,12 +302,24 @@ export function createSettingsView({ root, onClose, onChanged, onAiChanged } = {
         </label>
       </section>
 
-      <section class="settings-section">
+      <section class="settings-section" data-role="tagSection">
         <h3>标签管理</h3>
         <p class="settings-hint">
-          右键标签可以重命名或删除。重命名会同步更新所有使用该标签的笔记，请谨慎操作。
+          只显示当前笔记本的标签。右键标签可以重命名或删除，
+          重命名会同步更新该笔记本内使用这个标签的笔记。
         </p>
         <ul class="tag-manage-list" data-role="tagList"></ul>
+      </section>
+
+      <section class="settings-section" data-role="dataSection">
+        <h3>数据管理</h3>
+        <p class="settings-hint">
+          删除所有用户数据是唯一不可恢复的操作：全部笔记本、全部笔记（含回收站）和 AI 配置都会被清除。
+          建议先用页面底部的「导出」保存一份备份。
+        </p>
+        <div>
+          <button class="ghost-btn small danger" data-role="wipe">删除所有用户数据…</button>
+        </div>
       </section>
 
       <section class="settings-section">
@@ -293,7 +340,9 @@ export function createSettingsView({ root, onClose, onChanged, onAiChanged } = {
     apiBase: root.querySelector('[data-role="apiBase"]'),
     apiModel: root.querySelector('[data-role="apiModel"]'),
     apiKey: root.querySelector('[data-role="apiKey"]'),
+    tagSection: root.querySelector('[data-role="tagSection"]'),
     tagList: root.querySelector('[data-role="tagList"]'),
+    wipe: root.querySelector('[data-role="wipe"]'),
   };
 
   el.close.addEventListener('click', () => { if (onClose) onClose(); });
@@ -311,14 +360,23 @@ export function createSettingsView({ root, onClose, onChanged, onAiChanged } = {
     input.addEventListener('input', persistAi);
   });
 
+  function scopeId() {
+    return getScopeNotebookId ? getScopeNotebookId() : null;
+  }
+
   function renderTagList() {
-    const list = allTags(state.notes);
+    const scope = scopeId();
+    // 主界面（没有当前笔记本）不显示标签
+    el.tagSection.hidden = !scope;
+    if (!scope) { el.tagList.innerHTML = ''; return; }
+
+    const list = allTags(state.notes, scope);
     el.tagList.innerHTML = '';
 
     if (!list.length) {
       const li = document.createElement('li');
       li.className = 'tag-manage-empty';
-      li.textContent = '还没有标签。在笔记的「标签」面板里添加后，会出现在这里。';
+      li.textContent = '当前笔记本还没有标签。在笔记的「标签」面板里添加后，会出现在这里。';
       el.tagList.appendChild(li);
       return;
     }
@@ -343,18 +401,44 @@ export function createSettingsView({ root, onClose, onChanged, onAiChanged } = {
       more.addEventListener('click', (e) => {
         e.stopPropagation();
         const r = more.getBoundingClientRect();
-        openTagMenu(tag.name, r.left, r.bottom + 4);
+        openTagMenu(tag.name, r.left, r.bottom + 4, scope);
       });
 
       li.append(name, count, more);
       li.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        openTagMenu(tag.name, e.clientX, e.clientY);
+        openTagMenu(tag.name, e.clientX, e.clientY, scope);
       });
       frag.appendChild(li);
     });
     el.tagList.appendChild(frag);
   }
+
+  el.wipe.addEventListener('click', async () => {
+    const nbCount = state.notebooks.length;
+    const noteCount = state.notes.length;
+    const trashCount = state.notes.filter((n) => n.deletedAt).length;
+
+    const result = await ui.openModal({
+      title: '删除所有用户数据',
+      message:
+        `即将永久删除 ${nbCount} 个笔记本、${noteCount} 条笔记（其中回收站 ${trashCount} 条），` +
+        '以及 AI 配置等本机设置。\n\n此操作不可恢复，也没有撤销入口。',
+      buttons: [
+        { label: '取消', value: null },
+        {
+          label: '删除所有数据',
+          value: 'wipe',
+          primary: true,
+          danger: true,
+          countdown: 3,
+        },
+      ],
+    });
+
+    if (result !== 'wipe') return;
+    if (onWipe) await onWipe();
+  });
 
   onTagsChanged(() => {
     renderTagList();
