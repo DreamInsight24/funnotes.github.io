@@ -1,0 +1,2696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>渐进式笔记</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  [hidden] { display: none !important; }
+
+  :root {
+    --bg: #f6f6f4;
+    --panel: #ffffff;
+    --border: #e8e8e5;
+    --border-strong: #d9d9d4;
+    --text: #1c1c1a;
+    --text-soft: #55554f;
+    --muted: #8e8e86;
+    --accent: #2f6feb;
+    --accent-soft: #edf3fe;
+    --danger: #cf4646;
+    --radius: 8px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button { font: inherit; cursor: pointer; }
+  input, textarea, select { font: inherit; color: inherit; }
+
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── 侧边栏 ─────────────────────────── */
+  .sidebar {
+    width: 300px;
+    flex: 0 0 300px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 16px 10px;
+  }
+
+  .brand { font-weight: 600; font-size: 15px; }
+
+  .icon-btn {
+    width: 28px; height: 28px;
+    display: grid; place-items: center;
+    border: 1px solid var(--border-strong);
+    background: #fff;
+    border-radius: 6px;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--text-soft);
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .icon-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .icon-btn.small { width: 28px; height: 28px; flex-shrink: 0; }
+
+  .notebook-bar {
+    display: flex;
+    gap: 6px;
+    padding: 0 16px 10px;
+    align-items: center;
+    position: relative;
+  }
+
+  .notebook-select {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    outline: none;
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .notebook-select:focus { border-color: var(--accent); background: #fff; }
+
+  .dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    right: 16px;
+    min-width: 200px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.1);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    z-index: 50;
+    animation: menu-in .12s ease-out;
+  }
+  @keyframes menu-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .dropdown button {
+    text-align: left;
+    padding: 7px 10px;
+    border: none;
+    background: none;
+    border-radius: 5px;
+    font-size: 13px;
+    color: var(--text);
+    transition: background .12s;
+    white-space: nowrap;
+  }
+  .dropdown button:hover { background: var(--bg); }
+  .dropdown button.danger { color: var(--danger); }
+  .dropdown button.danger:hover { background: #fdeeee; }
+  .dropdown button:disabled { opacity: .4; cursor: not-allowed; }
+  .dropdown button:disabled:hover { background: none; }
+
+  .dropdown-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 3px 6px;
+  }
+
+  .search-wrap { padding: 0 16px 10px; }
+
+  .search {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    outline: none;
+    font-size: 13px;
+    transition: border-color .15s, background .15s;
+  }
+  .search:focus { border-color: var(--accent); background: #fff; }
+
+  .note-list {
+    flex: 1;
+    list-style: none;
+    margin: 0;
+    padding: 0 8px 8px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .note-item {
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 1px;
+    position: relative;
+    user-select: none;
+    transition: background .12s;
+  }
+  .note-item:hover { background: var(--bg); }
+  .note-item.active { background: var(--accent-soft); }
+  .note-item.dragging { opacity: 0.35; }
+
+  .note-item.drop-before::before {
+    content: '';
+    position: absolute;
+    left: 6px; right: 6px;
+    top: -1px;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+  .note-item.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 6px; right: 6px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+  .note-item.drop-inside {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  .ni-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .ni-arrow {
+    width: 16px;
+    height: 16px;
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+    color: var(--muted);
+    flex-shrink: 0;
+    border-radius: 3px;
+    transition: background .12s, color .12s;
+  }
+  .ni-arrow.has-children:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .ni-title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+    font-size: 13.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .note-list-empty {
+    padding: 24px 10px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .sidebar-footer {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+
+  .ghost-btn {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    background: #fff;
+    border-radius: 6px;
+    color: var(--text-soft);
+    font-size: 13px;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .ghost-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .ghost-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .ghost-btn.small { flex: none; padding: 4px 10px; font-size: 12px; }
+  .ghost-btn.danger:hover {
+    background: #fdeeee; border-color: var(--danger); color: var(--danger);
+  }
+  .ghost-btn.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .ghost-btn.drag-over {
+    background: #fdeeee;
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  /* 页脚弹出菜单（向上打开） */
+  .footer-dropdown {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 16px;
+    right: 16px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.1);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    z-index: 50;
+    animation: menu-in .12s ease-out;
+  }
+  .footer-dropdown button {
+    text-align: left;
+    padding: 7px 10px;
+    border: none;
+    background: none;
+    border-radius: 5px;
+    font-size: 13px;
+    color: var(--text);
+    transition: background .12s;
+    white-space: nowrap;
+  }
+  .footer-dropdown button:hover { background: var(--bg); }
+  .footer-dropdown button.danger { color: var(--danger); }
+  .footer-dropdown button.danger:hover { background: #fdeeee; }
+
+  /* ── 主区域 ─────────────────────────── */
+  .main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .empty-state {
+    flex: 1;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 4px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 8px; opacity: .6; }
+  .empty-state p { margin: 0; }
+  .empty-state .muted { font-size: 13px; }
+
+  .editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 24px 32px 0;
+  }
+
+  .editor-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .title-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 24px;
+    font-weight: 600;
+    padding: 4px 0;
+  }
+  .title-input::placeholder { color: #c8c8c2; }
+
+  .editor-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    padding-top: 8px;
+  }
+
+  .save-status {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .breadcrumb {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .breadcrumb span { white-space: nowrap; }
+  .breadcrumb .sep { color: #ccc; }
+
+  .more-panel {
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: panel-in .16s ease-out;
+  }
+  @keyframes panel-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .field { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .field-label { font-size: 12px; color: var(--muted); }
+  .field-input {
+    padding: 6px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    outline: none;
+    transition: border-color .15s, background .15s;
+  }
+  .field-input:focus { border-color: var(--accent); background: #fff; }
+
+  .field-row { display: flex; gap: 12px; }
+
+  .ai-config { display: flex; flex-direction: column; gap: 10px; }
+  .ai-actions { display: flex; gap: 8px; }
+  .ai-actions .ghost-btn { flex: none; }
+
+  .ai-result {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--panel);
+    animation: panel-in .16s ease-out;
+  }
+  .ai-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .ai-result-body {
+    white-space: pre-wrap;
+    font-size: 13px;
+    color: var(--text-soft);
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  /* ── 富文本内容区 ─────────────────── */
+  .content-input {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    margin-top: 12px;
+    padding: 4px 0 24px;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 15px;
+    line-height: 1.8;
+    overflow-y: auto;
+    word-wrap: break-word;
+  }
+  .content-input:focus { outline: none; }
+  .content-input:empty::before {
+    content: attr(data-placeholder);
+    color: #c8c8c2;
+    pointer-events: none;
+  }
+
+  .content-input h1 { font-size: 22px; margin: 18px 0 8px; font-weight: 600; }
+  .content-input h2 { font-size: 18px; margin: 16px 0 6px; font-weight: 600; }
+  .content-input h3 { font-size: 16px; margin: 14px 0 4px; font-weight: 600; }
+  .content-input h4,
+  .content-input h5,
+  .content-input h6 { font-size: 15px; margin: 12px 0 4px; font-weight: 600; }
+  .content-input p { margin: 8px 0; }
+  .content-input ul,
+  .content-input ol { padding-left: 26px; margin: 8px 0; }
+  .content-input li { margin: 2px 0; }
+  .content-input blockquote {
+    border-left: 3px solid var(--border-strong);
+    margin: 10px 0;
+    padding: 2px 0 2px 14px;
+    color: var(--text-soft);
+  }
+  .content-input pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 10px 0;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .content-input code {
+    background: var(--bg);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  .content-input pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+  }
+  .content-input table {
+    border-collapse: collapse;
+    margin: 12px 0;
+    width: 100%;
+    font-size: 14px;
+  }
+  .content-input table th,
+  .content-input table td {
+    border: 1px solid var(--border-strong);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+    min-width: 40px;
+  }
+  .content-input table th {
+    background: var(--bg);
+    font-weight: 600;
+  }
+  .content-input a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: rgba(47,111,235,.35);
+  }
+  .content-input img {
+    max-width: 100%;
+    border-radius: 6px;
+    margin: 6px 0;
+  }
+  .content-input hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+  }
+
+  /* ── 回收站视图 ─────────────────────── */
+  .trash-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 24px 32px 20px;
+  }
+
+  .trash-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .trash-head-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .trash-head-sub {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .trash-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .trash-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: #fff;
+    margin-bottom: 6px;
+    transition: border-color .15s;
+  }
+  .trash-item:hover { border-color: var(--border-strong); }
+
+  .trash-info { min-width: 0; flex: 1; }
+
+  .trash-title {
+    font-weight: 500;
+    font-size: 14px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .trash-meta {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .trash-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .trash-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── 浮动格式工具栏 ─────────────────── */
+  .fmt-toolbar {
+    position: fixed;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 4px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 300;
+    animation: menu-in .12s ease-out;
+  }
+
+  .fmt-toolbar button {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: none;
+    background: none;
+    border-radius: 5px;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .12s, color .12s;
+    padding: 0;
+  }
+  .fmt-toolbar button:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .fmt-toolbar .tb-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+    margin: 0 3px;
+    flex-shrink: 0;
+  }
+
+  /* ── Toast ──────────────────────────── */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px 10px 18px;
+    background: #22222a;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    z-index: 400;
+    animation: toast-in .18s ease-out;
+  }
+  .toast button {
+    border: none;
+    background: none;
+    color: #7cb0ff;
+    font-weight: 600;
+    padding: 0;
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translate(-50%, 8px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+  }
+
+  @media (max-width: 720px) {
+    .sidebar { width: 220px; flex-basis: 220px; }
+    .editor { padding: 16px 16px 0; }
+    .trash-view { padding: 16px; }
+    .editor-head { flex-direction: column; align-items: stretch; gap: 4px; }
+    .editor-meta { padding-top: 0; }
+    .field-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- 侧边栏 -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="brand">📓 笔记</span>
+      <button class="icon-btn" id="newBtn" title="新建笔记（Ctrl+N）" aria-label="新建笔记">＋</button>
+    </div>
+
+    <div class="notebook-bar">
+      <select id="notebookSelect" class="notebook-select" title="切换笔记本"></select>
+      <button class="icon-btn small" id="notebookMenuBtn" title="笔记本操作" aria-label="笔记本操作">⋯</button>
+      <div class="dropdown" id="notebookDropdown" hidden>
+        <button data-action="new">新建笔记本</button>
+        <button data-action="rename">重命名当前笔记本</button>
+        <div class="dropdown-divider"></div>
+        <button data-action="delete" class="danger">删除当前笔记本</button>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <input id="searchInput" class="search" placeholder="搜索标题、正文或标签…">
+    </div>
+
+    <ul class="note-list" id="noteList"></ul>
+
+    <div class="sidebar-footer">
+      <button class="ghost-btn" id="fileBtn" title="文件">📁 文件</button>
+      <button class="ghost-btn" id="trashBtn" title="回收站（右键清空）">🗑️ 回收站</button>
+
+      <div class="footer-dropdown" id="fileDropdown" hidden>
+        <button data-action="export">导出备份</button>
+        <button data-action="import">导入文件（.json / .md）</button>
+        <div class="dropdown-divider"></div>
+        <button data-action="clear" class="danger">清空所有数据</button>
+      </div>
+
+      <input type="file" id="importFile"
+             accept=".json,.md,.markdown,application/json,text/markdown,text/plain"
+             hidden>
+    </div>
+  </aside>
+
+  <!-- 主区域 -->
+  <main class="main">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">📝</div>
+      <p>还没有笔记</p>
+      <p class="muted">点左上角的 ＋ 新建一条</p>
+    </div>
+
+    <div class="editor" id="editor" hidden>
+      <div class="editor-head">
+        <div style="flex:1;min-width:0">
+          <input id="titleInput" class="title-input" placeholder="标题">
+          <div class="breadcrumb" id="breadcrumb"></div>
+        </div>
+        <div class="editor-meta">
+          <span class="save-status" id="saveStatus"></span>
+          <button class="ghost-btn small" id="moreBtn">更多 ▾</button>
+          <button class="ghost-btn small danger" id="deleteBtn">删除</button>
+        </div>
+      </div>
+
+      <div class="more-panel" id="morePanel" hidden>
+        <label class="field">
+          <span class="field-label">标签（用逗号分隔）</span>
+          <input id="tagsInput" class="field-input" placeholder="如：HCI, 作业, 灵感">
+        </label>
+
+        <div class="ai-config">
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">API Base</span>
+              <input id="apiBase" class="field-input" placeholder="https://api.deepseek.com/v1">
+            </label>
+            <label class="field">
+              <span class="field-label">模型</span>
+              <input id="apiModel" class="field-input" placeholder="deepseek-chat">
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">API Key（只存在你本地浏览器里）</span>
+            <input id="apiKey" type="password" class="field-input" placeholder="sk-...">
+          </label>
+        </div>
+
+        <div class="ai-actions">
+          <button class="ghost-btn" id="aiSummaryBtn">AI 总结</button>
+          <button class="ghost-btn" id="aiTagsBtn">AI 生成标签</button>
+        </div>
+      </div>
+
+      <div class="ai-result" id="aiResult" hidden>
+        <div class="ai-result-head">
+          <span id="aiResultTitle">AI 结果</span>
+          <div style="display:flex;gap:6px">
+            <button class="ghost-btn small" id="aiInsertBtn">插入正文</button>
+            <button class="ghost-btn small" id="aiDiscardBtn">丢弃</button>
+          </div>
+        </div>
+        <div class="ai-result-body" id="aiResultBody"></div>
+      </div>
+
+      <div id="contentInput" class="content-input" contenteditable="true"
+           data-placeholder="开始写点什么…  右键唤出格式工具栏"></div>
+    </div>
+
+    <!-- 回收站视图 -->
+    <div class="trash-view" id="trashView" hidden>
+      <div class="trash-head">
+        <div>
+          <h2 class="trash-head-title">🗑️ 回收站</h2>
+          <div class="trash-head-sub" id="trashCount"></div>
+        </div>
+        <button class="ghost-btn small danger" id="emptyTrashBtn">清空回收站</button>
+      </div>
+      <ul class="trash-list" id="trashList"></ul>
+    </div>
+  </main>
+</div>
+
+<!-- 浮动格式工具栏 -->
+<div class="fmt-toolbar" id="fmtToolbar" hidden>
+  <button data-cmd="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
+  <button data-cmd="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
+  <button data-cmd="underline" title="下划线 (Ctrl+U)"><u>U</u></button>
+  <button data-cmd="strikeThrough" title="删除线"><s>S</s></button>
+  <span class="tb-sep"></span>
+  <button data-block="h1" title="一级标题">H1</button>
+  <button data-block="h2" title="二级标题">H2</button>
+  <button data-block="h3" title="三级标题">H3</button>
+  <button data-block="p" title="正文段落">¶</button>
+  <span class="tb-sep"></span>
+  <button data-cmd="insertUnorderedList" title="无序列表">•</button>
+  <button data-cmd="insertOrderedList" title="有序列表">1.</button>
+  <button data-block="blockquote" title="引用">❝</button>
+  <button data-block="pre" title="代码块">⟨⟩</button>
+  <span class="tb-sep"></span>
+  <button data-action="link" title="插入链接">🔗</button>
+  <button data-action="table" title="插入表格">⊞</button>
+  <span class="tb-sep"></span>
+  <button data-cmd="removeFormat" title="清除格式">⌫</button>
+</div>
+
+<div class="toast" id="toast" hidden>
+  <span id="toastMsg"></span>
+  <button id="toastAction">撤销</button>
+</div>
+
+<script>
+/* =========================================================
+   工具
+   ========================================================= */
+const $ = (sel) => document.querySelector(sel);
+const genId = () => 'n_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const genNbId = () => 'nb_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+const MAX_DEPTH = 4;
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function isLikelyHtml(str) {
+  return /<(p|div|br|h[1-6]|ul|ol|li|table|thead|tbody|tr|td|th|strong|em|b|i|u|s|a|blockquote|pre|code|img|hr)\b/i.test(str || '');
+}
+
+/* =========================================================
+   IndexedDB 封装
+   ========================================================= */
+const DB = (() => {
+  const NAME = 'progressive-notes';
+  const NOTES = 'notes';
+  const NOTEBOOKS = 'notebooks';
+  const VERSION = 2;
+  let dbp = null;
+
+  function open() {
+    if (!dbp) {
+      dbp = new Promise((resolve, reject) => {
+        const req = indexedDB.open(NAME, VERSION);
+        req.onupgradeneeded = (e) => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(NOTES)) {
+            db.createObjectStore(NOTES, { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains(NOTEBOOKS)) {
+            db.createObjectStore(NOTEBOOKS, { keyPath: 'id' });
+          }
+          if (e.oldVersion >= 1 && e.oldVersion < 2) {
+            const tx = e.target.transaction;
+            const noteStore = tx.objectStore(NOTES);
+            const nbStore = tx.objectStore(NOTEBOOKS);
+            const defaultNbId = 'nb_default';
+            nbStore.put({
+              id: defaultNbId,
+              name: '我的笔记',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+            let i = 0;
+            noteStore.openCursor().onsuccess = (ev) => {
+              const cur = ev.target.result;
+              if (cur) {
+                const n = cur.value;
+                if (!n.notebookId) n.notebookId = defaultNbId;
+                if (n.parentId === undefined) n.parentId = null;
+                if (n.order === undefined) n.order = i++;
+                cur.update(n);
+                cur.continue();
+              }
+            };
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    return dbp;
+  }
+
+  async function tx(storeName, mode, fn) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const t = db.transaction(storeName, mode);
+      const store = t.objectStore(storeName);
+      let result;
+      const req = fn(store);
+      if (req) req.onsuccess = () => { result = req.result; };
+      t.oncomplete = () => resolve(result);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    });
+  }
+
+  return {
+    allNotes: () => tx(NOTES, 'readonly', (s) => s.getAll()),
+    putNote: (n) => tx(NOTES, 'readwrite', (s) => s.put(n)),
+    delNote: (id) => tx(NOTES, 'readwrite', (s) => s.delete(id)),
+    bulkPutNotes: (list) => tx(NOTES, 'readwrite', (s) => { list.forEach((n) => s.put(n)); }),
+    bulkDelNotes: (ids) => tx(NOTES, 'readwrite', (s) => { ids.forEach((id) => s.delete(id)); }),
+    clearNotes: () => tx(NOTES, 'readwrite', (s) => s.clear()),
+
+    allNotebooks: () => tx(NOTEBOOKS, 'readonly', (s) => s.getAll()),
+    putNotebook: (nb) => tx(NOTEBOOKS, 'readwrite', (s) => s.put(nb)),
+    delNotebook: (id) => tx(NOTEBOOKS, 'readwrite', (s) => s.delete(id)),
+    clearNotebooks: () => tx(NOTEBOOKS, 'readwrite', (s) => s.clear()),
+  };
+})();
+
+/* =========================================================
+   状态
+   ========================================================= */
+let notebooks = [];
+let notes = [];
+let currentNotebookId = null;
+let currentId = null;
+let currentView = 'notes'; // 'notes' | 'trash'
+let lastSelectedId = null;
+let saveTimer = null;
+let lastDeletedIds = null;
+let toastTimer = null;
+let aiResultMode = null;
+const collapsedIds = new Set();
+let dragState = null;
+let dropTarget = null;
+
+/* =========================================================
+   元素
+   ========================================================= */
+const els = {
+  newBtn: $('#newBtn'),
+  notebookSelect: $('#notebookSelect'),
+  notebookMenuBtn: $('#notebookMenuBtn'),
+  notebookDropdown: $('#notebookDropdown'),
+  searchInput: $('#searchInput'),
+  noteList: $('#noteList'),
+
+  fileBtn: $('#fileBtn'),
+  fileDropdown: $('#fileDropdown'),
+  trashBtn: $('#trashBtn'),
+  importFile: $('#importFile'),
+
+  emptyState: $('#emptyState'),
+  editor: $('#editor'),
+  titleInput: $('#titleInput'),
+  breadcrumb: $('#breadcrumb'),
+  saveStatus: $('#saveStatus'),
+  moreBtn: $('#moreBtn'),
+  deleteBtn: $('#deleteBtn'),
+  morePanel: $('#morePanel'),
+  tagsInput: $('#tagsInput'),
+
+  apiBase: $('#apiBase'),
+  apiModel: $('#apiModel'),
+  apiKey: $('#apiKey'),
+  aiSummaryBtn: $('#aiSummaryBtn'),
+  aiTagsBtn: $('#aiTagsBtn'),
+
+  aiResult: $('#aiResult'),
+  aiResultTitle: $('#aiResultTitle'),
+  aiResultBody: $('#aiResultBody'),
+  aiInsertBtn: $('#aiInsertBtn'),
+  aiDiscardBtn: $('#aiDiscardBtn'),
+
+  contentInput: $('#contentInput'),
+  fmtToolbar: $('#fmtToolbar'),
+
+  trashView: $('#trashView'),
+  trashList: $('#trashList'),
+  trashCount: $('#trashCount'),
+  emptyTrashBtn: $('#emptyTrashBtn'),
+
+  toast: $('#toast'),
+  toastMsg: $('#toastMsg'),
+  toastAction: $('#toastAction'),
+};
+
+/* =========================================================
+   工具函数
+   ========================================================= */
+function parseTags(str) {
+  return [...new Set(str.split(/[,，]/).map((s) => s.trim()).filter(Boolean))];
+}
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  if (d.toDateString() === now.toDateString()) return `${hh}:${mm}`;
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`;
+}
+
+function renderSaveStatus(ts) {
+  els.saveStatus.textContent = ts ? '已保存 ' + formatTime(ts) : '';
+}
+
+/** 构建索引，跳过已删除笔记 */
+function buildIndexes() {
+  const byId = new Map();
+  const byParent = new Map();
+  notes.forEach((n) => {
+    if (n.deletedAt) return;
+    byId.set(n.id, n);
+    const p = n.parentId || null;
+    if (!byParent.has(p)) byParent.set(p, []);
+    byParent.get(p).push(n);
+  });
+  byParent.forEach((arr) => arr.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
+  return { byId, byParent };
+}
+
+function getDepth(noteId, byId) {
+  let d = 0;
+  let cur = byId.get(noteId);
+  let guard = 0;
+  while (cur && cur.parentId && guard++ < 100) {
+    d++;
+    cur = byId.get(cur.parentId);
+  }
+  return d;
+}
+
+function getSubtreeHeight(noteId, byParent) {
+  let h = 0;
+  const children = byParent.get(noteId) || [];
+  for (const c of children) {
+    h = Math.max(h, getSubtreeHeight(c.id, byParent) + 1);
+  }
+  return h;
+}
+
+function isDescendantOf(candidateId, ancestorId, byId) {
+  let cur = byId.get(candidateId);
+  let guard = 0;
+  while (cur && cur.parentId && guard++ < 100) {
+    if (cur.parentId === ancestorId) return true;
+    cur = byId.get(cur.parentId);
+  }
+  return false;
+}
+
+/** 收集子树（包含已删除的），用于批量操作 */
+function collectSubtree(rootId) {
+  const result = [];
+  const root = notes.find((n) => n.id === rootId);
+  if (!root) return result;
+  result.push(root);
+  notes.filter((n) => n.parentId === rootId).forEach((c) => {
+    result.push(...collectSubtree(c.id));
+  });
+  return result;
+}
+
+/* =========================================================
+   Toast
+   ========================================================= */
+function showToast(msg, actionLabel, onAction) {
+  els.toastMsg.textContent = msg;
+
+  if (actionLabel) {
+    els.toastAction.hidden = false;
+    els.toastAction.textContent = actionLabel;
+    els.toastAction.onclick = () => { if (onAction) onAction(); };
+  } else {
+    els.toastAction.hidden = true;
+  }
+
+  els.toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, actionLabel ? 6000 : 2200);
+}
+
+function hideToast() {
+  els.toast.hidden = true;
+  clearTimeout(toastTimer);
+}
+
+/* =========================================================
+   Markdown 导入（修复版：无 H1 时以文件名建根）
+   ========================================================= */
+function parseMarkdownToSections(md) {
+  const lines = String(md || '').split(/\r?\n/);
+  const sections = [];
+  let current = { level: 0, title: '', lines: [] };
+  let inCodeBlock = false;
+
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      inCodeBlock = !inCodeBlock;
+      current.lines.push(line);
+      continue;
+    }
+
+    if (!inCodeBlock) {
+      const m = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+      if (m) {
+        sections.push(current);
+        current = { level: m[1].length, title: m[2].trim(), lines: [] };
+        continue;
+      }
+    }
+    current.lines.push(line);
+  }
+  sections.push(current);
+  return sections;
+}
+
+function markdownToHtml(md) {
+  const src = (md || '').trim();
+  if (!src) return '';
+  if (typeof marked !== 'undefined') {
+    try {
+      return marked.parse(src, { breaks: true, gfm: true });
+    } catch (e) {
+      console.warn('marked 解析失败，降级到纯文本', e);
+    }
+  }
+  return src.split(/\n{2,}/).map((p) =>
+    `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+  ).join('');
+}
+
+async function importMarkdownFile(text, fileName) {
+  if (!currentNotebookId) {
+    showToast('请先创建一个笔记本');
+    return;
+  }
+
+  const sections = parseMarkdownToSections(text);
+  const fileNameBase = String(fileName || '')
+    .replace(/\.(md|markdown|txt)$/i, '')
+    .trim() || '导入的笔记';
+
+  if (!sections.length) {
+    showToast('文件为空');
+    return;
+  }
+
+  const existingRoots = notes.filter(
+    (n) => n.notebookId === currentNotebookId && !n.parentId && !n.deletedAt
+  );
+  let orderCounter = existingRoots.length
+    ? Math.max(...existingRoots.map((n) => n.order ?? 0)) + 1
+    : 0;
+
+  const created = [];
+  const stack = []; // stack[level] = note；H1 位于 stack[1]
+
+  // 找第一个标题
+  const firstHeadingIdx = sections.findIndex((s) => s.level > 0);
+  const firstHeading = firstHeadingIdx >= 0 ? sections[firstHeadingIdx] : null;
+
+  // 没有标题，或第一个标题不是 H1 → 用文件名创建一个根节点
+  const needRoot = !firstHeading || firstHeading.level > 1;
+
+  if (needRoot) {
+    // 收集第一个标题之前的所有内容
+    const preLines = [];
+    if (firstHeadingIdx > 0) {
+      for (let i = 0; i < firstHeadingIdx; i++) {
+        preLines.push(...sections[i].lines);
+      }
+    } else if (firstHeadingIdx < 0) {
+      // 整个文件没有标题
+      for (const s of sections) preLines.push(...s.lines);
+    }
+
+    const rootNote = {
+      id: genId(),
+      notebookId: currentNotebookId,
+      parentId: null,
+      order: orderCounter++,
+      title: fileNameBase,
+      content: markdownToHtml(preLines.join('\n')),
+      tags: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    created.push(rootNote);
+    stack[1] = rootNote;
+  }
+
+  // 处理所有标题
+  for (const sec of sections) {
+    if (sec.level === 0) continue;
+
+    let parentId = null;
+    for (let i = sec.level - 1; i >= 1; i--) {
+      if (stack[i]) { parentId = stack[i].id; break; }
+    }
+
+    const html = markdownToHtml(sec.lines.join('\n'));
+    const note = {
+      id: genId(),
+      notebookId: currentNotebookId,
+      parentId,
+      order: orderCounter++,
+      title: sec.title || '未命名',
+      content: html,
+      tags: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    created.push(note);
+
+    stack.length = sec.level;
+    stack[sec.level] = note;
+  }
+
+  if (!created.length) {
+    showToast('文件里没有可导入的内容');
+    return;
+  }
+
+  await DB.bulkPutNotes(created);
+  notes.push(...created);
+
+  renderList();
+  selectNote(created[0].id);
+
+  showToast(`已从 Markdown 导入 ${created.length} 条笔记`);
+}
+
+/* =========================================================
+   笔记本
+   ========================================================= */
+function renderNotebookSelect() {
+  els.notebookSelect.innerHTML = '';
+  notebooks
+    .slice()
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .forEach((nb) => {
+      const opt = document.createElement('option');
+      opt.value = nb.id;
+      opt.textContent = nb.name;
+      els.notebookSelect.appendChild(opt);
+    });
+  if (currentNotebookId) els.notebookSelect.value = currentNotebookId;
+
+  const delBtn = els.notebookDropdown.querySelector('button[data-action="delete"]');
+  if (delBtn) delBtn.disabled = notebooks.length <= 1;
+}
+
+async function createNotebook() {
+  const name = prompt('新笔记本名称：', '新笔记本');
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+
+  const nb = {
+    id: genNbId(),
+    name: trimmed,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  notebooks.push(nb);
+  await DB.putNotebook(nb);
+  renderNotebookSelect();
+  switchNotebook(nb.id);
+  showToast(`已创建笔记本「${trimmed}」`);
+}
+
+async function renameNotebook() {
+  if (!currentNotebookId) return;
+  const nb = notebooks.find((n) => n.id === currentNotebookId);
+  if (!nb) return;
+
+  const name = prompt('重命名笔记本：', nb.name);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === nb.name) return;
+
+  const oldName = nb.name;
+  nb.name = trimmed;
+  nb.updatedAt = Date.now();
+  await DB.putNotebook(nb);
+  renderNotebookSelect();
+  showToast(`已从「${oldName}」重命名为「${trimmed}」`);
+}
+
+async function deleteNotebook() {
+  if (!currentNotebookId) return;
+  if (notebooks.length <= 1) {
+    showToast('至少保留一个笔记本');
+    return;
+  }
+
+  const nb = notebooks.find((n) => n.id === currentNotebookId);
+  if (!nb) return;
+
+  const toDelete = notes.filter((n) => n.notebookId === currentNotebookId);
+  const count = toDelete.length;
+
+  const msg = count > 0
+    ? `删除笔记本「${nb.name}」？\n其中 ${count} 条笔记也会被永久删除。`
+    : `删除笔记本「${nb.name}」？`;
+  if (!confirm(msg)) return;
+
+  notes = notes.filter((n) => n.notebookId !== currentNotebookId);
+  notebooks = notebooks.filter((n) => n.id !== currentNotebookId);
+
+  if (toDelete.length) {
+    await DB.bulkDelNotes(toDelete.map((n) => n.id));
+  }
+  await DB.delNotebook(nb.id);
+
+  currentNotebookId = notebooks[0].id;
+  localStorage.setItem('current_notebook', currentNotebookId);
+  renderNotebookSelect();
+  showEmpty();
+  renderList();
+  showToast(`已删除笔记本「${nb.name}」`);
+}
+
+function switchNotebook(id) {
+  flushSave();
+  currentNotebookId = id;
+  localStorage.setItem('current_notebook', id);
+  currentId = null;
+  showEmpty();
+  renderList();
+}
+
+/* =========================================================
+   列表 / 树渲染
+   ========================================================= */
+function renderList() {
+  const q = els.searchInput.value.trim().toLowerCase();
+
+  if (!currentNotebookId) {
+    els.noteList.innerHTML = '<li class="note-list-empty">没有笔记本</li>';
+    return;
+  }
+
+  const inNotebook = notes.filter(
+    (n) => n.notebookId === currentNotebookId && !n.deletedAt
+  );
+
+  if (q) {
+    const matched = inNotebook.filter((n) => {
+      const inTitle = (n.title || '').toLowerCase().includes(q);
+      const inBody = (n.content || '').toLowerCase().includes(q);
+      const inTags = (n.tags || []).some((t) => t.toLowerCase().includes(q));
+      return inTitle || inBody || inTags;
+    });
+
+    els.noteList.innerHTML = '';
+    if (!matched.length) {
+      els.noteList.innerHTML = '<li class="note-list-empty">没有匹配的笔记</li>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    matched.forEach((n) => frag.appendChild(buildFlatItem(n, 0)));
+    els.noteList.appendChild(frag);
+    return;
+  }
+
+  const { byParent, byId } = buildIndexes();
+  const inNbSet = new Set(inNotebook.map((n) => n.id));
+
+  // 根节点：无 parentId，或 parentId 不在当前笔记本有效集合内
+  const root = inNotebook.filter((n) => {
+    if (!n.parentId) return true;
+    if (!byId.has(n.parentId)) return true;
+    if (!inNbSet.has(n.parentId)) return true;
+    return false;
+  });
+  root.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  els.noteList.innerHTML = '';
+
+  if (!root.length) {
+    els.noteList.innerHTML = '<li class="note-list-empty">还没有笔记</li>';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  root.forEach((n) => renderTreeNode(n, 0, frag, byParent, inNbSet));
+  els.noteList.appendChild(frag);
+}
+
+function buildFlatItem(note, depth) {
+  const li = document.createElement('li');
+  li.className = 'note-item' + (note.id === currentId ? ' active' : '');
+  li.dataset.id = note.id;
+  li.style.paddingLeft = (10 + depth * 14) + 'px';
+
+  const row = document.createElement('div');
+  row.className = 'ni-row';
+
+  const arrow = document.createElement('span');
+  arrow.className = 'ni-arrow';
+  arrow.textContent = '';
+
+  const title = document.createElement('span');
+  title.className = 'ni-title';
+  title.textContent = note.title || '无标题';
+
+  row.append(arrow, title);
+  li.appendChild(row);
+
+  li.addEventListener('click', () => selectNote(note.id));
+  return li;
+}
+
+function renderTreeNode(note, depth, container, byParent, inNbSet) {
+  const children = (byParent.get(note.id) || []).filter((n) => inNbSet.has(n.id));
+  const hasChildren = children.length > 0;
+  const collapsed = collapsedIds.has(note.id);
+
+  const li = document.createElement('li');
+  li.className = 'note-item' + (note.id === currentId ? ' active' : '');
+  if (hasChildren) li.classList.add('has-children');
+  li.dataset.id = note.id;
+  li.draggable = true;
+  li.style.paddingLeft = (10 + depth * 14) + 'px';
+
+  const row = document.createElement('div');
+  row.className = 'ni-row';
+
+  const arrow = document.createElement('span');
+  arrow.className = 'ni-arrow' + (hasChildren ? ' has-children' : '');
+  if (hasChildren) {
+    arrow.textContent = collapsed ? '▸' : '▾';
+    arrow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCollapse(note.id);
+    });
+  } else {
+    arrow.textContent = '';
+  }
+
+  const title = document.createElement('span');
+  title.className = 'ni-title';
+  title.textContent = note.title || '无标题';
+
+  row.append(arrow, title);
+  li.appendChild(row);
+
+  li.addEventListener('click', () => selectNote(note.id));
+
+  li.addEventListener('dragstart', (e) => {
+    dragState = { id: note.id };
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', note.id); } catch (_) {}
+    li.classList.add('dragging');
+  });
+
+  li.addEventListener('dragend', () => {
+    dragState = null;
+    dropTarget = null;
+    li.classList.remove('dragging');
+    clearDropIndicators();
+    els.trashBtn.classList.remove('drag-over');
+  });
+
+  li.addEventListener('dragover', (e) => {
+    if (!dragState) return;
+    if (dragState.id === note.id) return;
+
+    const { byId } = buildIndexes();
+    if (isDescendantOf(note.id, dragState.id, byId)) return;
+
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const rect = li.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const h = rect.height;
+
+    let position;
+    if (y < h * 0.25) position = 'before';
+    else if (y > h * 0.75) position = 'after';
+    else position = 'inside';
+
+    if (!canDrop(dragState.id, note.id, position)) return;
+
+    clearDropIndicators();
+    li.classList.add('drop-' + position);
+    dropTarget = { id: note.id, position };
+  });
+
+  li.addEventListener('dragleave', (e) => {
+    if (!li.contains(e.relatedTarget)) {
+      li.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    }
+  });
+
+  li.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    if (!dragState || !dropTarget) return;
+    const { id: draggedId } = dragState;
+    const { id: targetId, position } = dropTarget;
+    dragState = null;
+    dropTarget = null;
+    clearDropIndicators();
+    await moveNote(draggedId, targetId, position);
+  });
+
+  container.appendChild(li);
+
+  if (hasChildren && !collapsed) {
+    children.forEach((c) => renderTreeNode(c, depth + 1, container, byParent, inNbSet));
+  }
+}
+
+function clearDropIndicators() {
+  els.noteList.querySelectorAll('.drop-before, .drop-after, .drop-inside')
+    .forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-inside'));
+}
+
+function toggleCollapse(id) {
+  if (collapsedIds.has(id)) collapsedIds.delete(id);
+  else collapsedIds.add(id);
+  renderList();
+}
+
+/* =========================================================
+   拖拽移动
+   ========================================================= */
+function canDrop(draggedId, targetId, position) {
+  const { byId, byParent } = buildIndexes();
+  const target = byId.get(targetId);
+  if (!target) return false;
+
+  const draggedHeight = getSubtreeHeight(draggedId, byParent);
+  let newDepth;
+
+  if (position === 'inside') {
+    newDepth = getDepth(targetId, byId) + 1;
+  } else {
+    const parent = target.parentId;
+    newDepth = parent ? getDepth(parent, byId) + 1 : 0;
+  }
+
+  return newDepth + draggedHeight <= MAX_DEPTH;
+}
+
+async function moveNote(draggedId, targetId, position) {
+  const dragged = notes.find((n) => n.id === draggedId);
+  const target = notes.find((n) => n.id === targetId);
+  if (!dragged || !target) return;
+  if (dragged.id === target.id) return;
+
+  const { byId } = buildIndexes();
+  if (isDescendantOf(targetId, draggedId, byId)) return;
+
+  let newParentId;
+  let newOrder;
+
+  if (position === 'inside') {
+    newParentId = targetId;
+    const siblings = notes
+      .filter((n) => n.parentId === targetId && n.id !== draggedId && !n.deletedAt)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    newOrder = siblings.length ? (siblings[siblings.length - 1].order ?? 0) + 1 : 0;
+  } else {
+    newParentId = target.parentId || null;
+    const siblings = notes
+      .filter((n) => n.parentId === newParentId && n.id !== draggedId && !n.deletedAt)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const idx = siblings.findIndex((n) => n.id === targetId);
+
+    if (idx < 0) {
+      newOrder = siblings.length ? (siblings[siblings.length - 1].order ?? 0) + 1 : 0;
+    } else if (position === 'before') {
+      const prev = siblings[idx - 1];
+      const curr = siblings[idx];
+      newOrder = prev
+        ? ((prev.order ?? 0) + (curr.order ?? 0)) / 2
+        : (curr.order ?? 0) - 1;
+    } else {
+      const curr = siblings[idx];
+      const next = siblings[idx + 1];
+      newOrder = next
+        ? ((curr.order ?? 0) + (next.order ?? 0)) / 2
+        : (curr.order ?? 0) + 1;
+    }
+  }
+
+  dragged.parentId = newParentId;
+  dragged.order = newOrder;
+  dragged.updatedAt = Date.now();
+  await DB.putNote(dragged);
+
+  if (newParentId && collapsedIds.has(newParentId)) collapsedIds.delete(newParentId);
+
+  renderList();
+}
+
+/* =========================================================
+   保存逻辑
+   ========================================================= */
+function scheduleSave() {
+  if (!currentId) return;
+  els.saveStatus.textContent = '编辑中…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveNow();
+  }, 600);
+}
+
+async function saveNow() {
+  if (!currentId) return;
+  const id = currentId;
+  const note = notes.find((n) => n.id === id);
+  if (!note || note.deletedAt) return;
+
+  note.title = els.titleInput.value;
+  note.content = els.contentInput.innerHTML;
+  note.tags = parseTags(els.tagsInput.value);
+  note.updatedAt = Date.now();
+
+  try {
+    await DB.putNote(note);
+  } catch (err) {
+    console.error('保存失败', err);
+    els.saveStatus.textContent = '保存失败';
+    return;
+  }
+
+  renderList();
+  if (currentId === id) renderSaveStatus(note.updatedAt);
+}
+
+function flushSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    saveNow();
+  }
+}
+
+/* =========================================================
+   视图切换
+   ========================================================= */
+function showEmpty() {
+  currentId = null;
+  currentView = 'notes';
+  els.editor.hidden = true;
+  els.emptyState.hidden = false;
+  els.trashView.hidden = true;
+  els.trashBtn.classList.remove('active');
+  els.breadcrumb.innerHTML = '';
+  hideFmtToolbar();
+}
+
+function showTrashView() {
+  flushSave();
+  lastSelectedId = currentId;
+  currentId = null;
+  currentView = 'trash';
+  els.editor.hidden = true;
+  els.emptyState.hidden = true;
+  els.trashView.hidden = false;
+  els.trashBtn.classList.add('active');
+  hideFmtToolbar();
+  renderTrash();
+}
+
+function showNotesView() {
+  currentView = 'notes';
+  els.trashView.hidden = true;
+  els.trashBtn.classList.remove('active');
+  if (lastSelectedId) {
+    const note = notes.find((n) => n.id === lastSelectedId && !n.deletedAt);
+    if (note) { selectNote(lastSelectedId); return; }
+  }
+  showEmpty();
+}
+
+/* =========================================================
+   回收站渲染
+   ========================================================= */
+function renderTrash() {
+  const deleted = notes
+    .filter((n) => n.deletedAt)
+    .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+
+  els.trashCount.textContent = deleted.length
+    ? `共 ${deleted.length} 条已删除笔记`
+    : '暂无已删除笔记';
+
+  els.emptyTrashBtn.disabled = !deleted.length;
+
+  els.trashList.innerHTML = '';
+
+  if (!deleted.length) {
+    els.trashList.innerHTML = '<li class="trash-empty">回收站是空的</li>';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const note of deleted) {
+    const li = document.createElement('li');
+    li.className = 'trash-item';
+
+    const info = document.createElement('div');
+    info.className = 'trash-info';
+
+    const title = document.createElement('div');
+    title.className = 'trash-title';
+    title.textContent = note.title || '无标题';
+
+    const meta = document.createElement('div');
+    meta.className = 'trash-meta';
+    const when = note.deletedAt ? formatTime(note.deletedAt) : '未知';
+    const childCount = notes.filter((n) => n.parentId === note.id && n.deletedAt).length;
+    meta.textContent = `删除于 ${when}` + (childCount ? ` · 含 ${childCount} 条子笔记` : '');
+
+    info.append(title, meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'trash-actions';
+
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'ghost-btn small';
+    restoreBtn.textContent = '还原';
+    restoreBtn.addEventListener('click', () => restoreNote(note.id));
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ghost-btn small danger';
+    delBtn.textContent = '永久删除';
+    delBtn.addEventListener('click', () => permanentDelete(note.id));
+
+    actions.append(restoreBtn, delBtn);
+    li.append(info, actions);
+    frag.appendChild(li);
+  }
+  els.trashList.appendChild(frag);
+}
+
+/* =========================================================
+   回收站操作
+   ========================================================= */
+async function softDeleteNote(id) {
+  const note = notes.find((n) => n.id === id);
+  if (!note || note.deletedAt) return;
+
+  const subtree = collectSubtree(id).filter((n) => !n.deletedAt);
+  if (!subtree.length) return;
+
+  const now = Date.now();
+  subtree.forEach((n) => {
+    n.deletedAt = now;
+    n.updatedAt = now;
+  });
+
+  // 若当前编辑的就是被删除的，关闭编辑器
+  if (currentId && subtree.some((n) => n.id === currentId)) {
+    showEmpty();
+  }
+
+  await DB.bulkPutNotes(subtree);
+  renderList();
+
+  lastDeletedIds = subtree.map((n) => n.id);
+
+  const title = note.title || '无标题';
+  const extra = subtree.length > 1 ? `及 ${subtree.length - 1} 条子笔记` : '';
+  showToast(`已移入回收站「${title}」${extra}`, '撤销', undoSoftDelete);
+}
+
+async function undoSoftDelete() {
+  if (!lastDeletedIds || !lastDeletedIds.length) return;
+  const ids = new Set(lastDeletedIds);
+  lastDeletedIds = null;
+
+  const toRestore = notes.filter((n) => ids.has(n.id) && n.deletedAt);
+  const now = Date.now();
+  toRestore.forEach((n) => {
+    delete n.deletedAt;
+    n.updatedAt = now;
+  });
+
+  await DB.bulkPutNotes(toRestore);
+  hideToast();
+  renderList();
+
+  if (toRestore.length) selectNote(toRestore[0].id);
+}
+
+async function restoreNote(id) {
+  const note = notes.find((n) => n.id === id);
+  if (!note || !note.deletedAt) return;
+
+  // 收集自己 + 已删除的后代
+  const subtree = collectSubtree(id).filter((n) => n.deletedAt);
+
+  // 如果父节点已删除或不存在，则作为根节点存在
+  if (note.parentId) {
+    const parent = notes.find((n) => n.id === note.parentId);
+    if (!parent || parent.deletedAt) {
+      note.parentId = null;
+      // 放到当前笔记本根节点最后
+      const roots = notes.filter(
+        (n) => n.notebookId === note.notebookId && !n.parentId && !n.deletedAt
+      );
+      note.order = roots.length ? Math.max(...roots.map((r) => r.order ?? 0)) + 1 : 0;
+    }
+  }
+
+  const now = Date.now();
+  subtree.forEach((n) => {
+    delete n.deletedAt;
+    n.updatedAt = now;
+  });
+
+  await DB.bulkPutNotes(subtree);
+  renderTrash();
+  renderList();
+
+  showToast(`已还原 ${subtree.length} 条笔记`);
+}
+
+async function permanentDelete(id) {
+  const note = notes.find((n) => n.id === id);
+  if (!note || !note.deletedAt) return;
+
+  const subtree = collectSubtree(id);
+  const ids = subtree.map((n) => n.id);
+
+  if (!confirm(`永久删除「${note.title || '无标题'}」及其全部子笔记？此操作不可恢复。`)) return;
+
+  const idSet = new Set(ids);
+  notes = notes.filter((n) => !idSet.has(n.id));
+
+  await DB.bulkDelNotes(ids);
+  renderTrash();
+  renderList();
+  showToast(`已永久删除 ${ids.length} 条笔记`);
+}
+
+async function emptyTrash() {
+  const deleted = notes.filter((n) => n.deletedAt);
+  if (!deleted.length) {
+    showToast('回收站已经是空的');
+    return;
+  }
+
+  if (!confirm(`永久删除回收站中全部 ${deleted.length} 条笔记？此操作不可恢复。`)) return;
+
+  const ids = deleted.map((n) => n.id);
+  const idSet = new Set(ids);
+  notes = notes.filter((n) => !idSet.has(n.id));
+
+  await DB.bulkDelNotes(ids);
+  renderTrash();
+  renderList();
+  showToast(`已清空回收站（${ids.length} 条）`);
+}
+
+/* =========================================================
+   笔记操作
+   ========================================================= */
+function renderBreadcrumb(note) {
+  const { byId } = buildIndexes();
+  const path = [];
+  let cur = note;
+  let guard = 0;
+  while (cur && guard++ < 100) {
+    path.unshift(cur);
+    cur = cur.parentId ? byId.get(cur.parentId) : null;
+  }
+  els.breadcrumb.innerHTML = '';
+  path.forEach((n, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '›';
+      els.breadcrumb.appendChild(sep);
+    }
+    const s = document.createElement('span');
+    s.textContent = n.title || '无标题';
+    els.breadcrumb.appendChild(s);
+  });
+}
+
+function setEditorContent(content) {
+  const c = content || '';
+  if (!c) {
+    els.contentInput.innerHTML = '';
+    return;
+  }
+  if (isLikelyHtml(c)) {
+    els.contentInput.innerHTML = c;
+  } else {
+    els.contentInput.innerHTML = c
+      .split(/\n{2,}/)
+      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+      .join('');
+  }
+}
+
+function selectNote(id) {
+  flushSave();
+
+  const note = notes.find((n) => n.id === id);
+  if (!note || note.deletedAt) { showEmpty(); return; }
+
+  if (note.notebookId !== currentNotebookId) {
+    currentNotebookId = note.notebookId;
+    localStorage.setItem('current_notebook', currentNotebookId);
+    renderNotebookSelect();
+  }
+
+  // 展开祖先
+  let cur = note.parentId ? notes.find((n) => n.id === note.parentId) : null;
+  let guard = 0;
+  while (cur && guard++ < 100) {
+    collapsedIds.delete(cur.id);
+    cur = cur.parentId ? notes.find((n) => n.id === cur.parentId) : null;
+  }
+
+  // 切换出回收站视图
+  currentView = 'notes';
+  els.trashView.hidden = true;
+  els.trashBtn.classList.remove('active');
+
+  currentId = id;
+  els.emptyState.hidden = true;
+  els.editor.hidden = false;
+
+  els.titleInput.value = note.title || '';
+  setEditorContent(note.content || '');
+  els.tagsInput.value = (note.tags || []).join(', ');
+
+  renderBreadcrumb(note);
+  renderSaveStatus(note.updatedAt);
+  hideAIResult();
+  hideFmtToolbar();
+  renderList();
+}
+
+async function createNote() {
+  flushSave();
+
+  if (!currentNotebookId) {
+    showToast('请先创建一个笔记本');
+    return;
+  }
+
+  const rootSiblings = notes.filter(
+    (n) => n.notebookId === currentNotebookId && !n.parentId && !n.deletedAt
+  );
+  const maxOrder = rootSiblings.length
+    ? Math.max(...rootSiblings.map((n) => n.order ?? 0))
+    : -1;
+
+  const note = {
+    id: genId(),
+    notebookId: currentNotebookId,
+    parentId: null,
+    order: maxOrder + 1,
+    title: '',
+    content: '',
+    tags: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  notes.push(note);
+  await DB.putNote(note);
+
+  renderList();
+  selectNote(note.id);
+  els.titleInput.focus();
+}
+
+async function deleteNote() {
+  if (!currentId) return;
+  await softDeleteNote(currentId);
+}
+
+/* =========================================================
+   清空所有数据
+   ========================================================= */
+async function clearAllData() {
+  if (!confirm('确定清空所有笔记本、笔记（含回收站）和 AI 设置？此操作不可恢复，建议先导出备份。')) return;
+  if (!confirm('再次确认：真的要清空吗？')) return;
+
+  flushSave();
+
+  try {
+    await DB.clearNotes();
+    await DB.clearNotebooks();
+    localStorage.removeItem('ai_base');
+    localStorage.removeItem('ai_model');
+    localStorage.removeItem('ai_key');
+    localStorage.removeItem('current_notebook');
+
+    notes = [];
+    notebooks = [];
+    currentId = null;
+    currentNotebookId = null;
+    lastDeletedIds = null;
+    lastSelectedId = null;
+    collapsedIds.clear();
+
+    const nb = {
+      id: genNbId(),
+      name: '我的笔记',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    notebooks.push(nb);
+    await DB.putNotebook(nb);
+    currentNotebookId = nb.id;
+    localStorage.setItem('current_notebook', nb.id);
+
+    renderNotebookSelect();
+    showEmpty();
+    renderList();
+    hideAIResult();
+
+    els.titleInput.value = '';
+    els.contentInput.innerHTML = '';
+    els.tagsInput.value = '';
+    els.apiBase.value = 'https://api.deepseek.com/v1';
+    els.apiModel.value = 'deepseek-chat';
+    els.apiKey.value = '';
+    els.saveStatus.textContent = '';
+
+    hideToast();
+    showToast('已清空所有数据');
+  } catch (err) {
+    console.error('清空失败', err);
+    showToast('清空失败：' + err.message);
+  }
+}
+
+/* =========================================================
+   导出 / 导入
+   ========================================================= */
+function exportJSON() {
+  const payload = {
+    app: 'progressive-notes',
+    version: 3,
+    exportedAt: new Date().toISOString(),
+    notebooks,
+    notes,
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `notes-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  const activeCount = notes.filter((n) => !n.deletedAt).length;
+  const trashCount = notes.filter((n) => n.deletedAt).length;
+  showToast(`已导出 ${notebooks.length} 个笔记本、${activeCount} 条笔记（含回收站 ${trashCount} 条）`);
+}
+
+async function importJSON(file) {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    let incomingNotebooks = [];
+    let incomingNotes = [];
+
+    if (Array.isArray(data)) {
+      incomingNotes = data;
+    } else if (data && typeof data === 'object') {
+      incomingNotebooks = Array.isArray(data.notebooks) ? data.notebooks : [];
+      incomingNotes = Array.isArray(data.notes) ? data.notes : [];
+    }
+
+    if (!incomingNotebooks.length && !incomingNotes.length) {
+      throw new Error('文件里没有可导入的内容');
+    }
+
+    const nbIdMap = new Map();
+    const existingNbIds = new Set(notebooks.map((n) => n.id));
+
+    for (const raw of incomingNotebooks) {
+      if (!raw || typeof raw !== 'object') continue;
+      const id = (typeof raw.id === 'string' && raw.id) ? raw.id : genNbId();
+      const finalId = existingNbIds.has(id) ? genNbId() : id;
+      nbIdMap.set(id, finalId);
+      existingNbIds.add(finalId);
+
+      notebooks.push({
+        id: finalId,
+        name: String(raw.name || '未命名笔记本'),
+        createdAt: Number(raw.createdAt) || Date.now(),
+        updatedAt: Number(raw.updatedAt) || Date.now(),
+      });
+    }
+
+    let fallbackNbId = currentNotebookId;
+    if (!fallbackNbId) {
+      if (!notebooks.length) {
+        const nb = {
+          id: genNbId(),
+          name: '导入的笔记',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        notebooks.push(nb);
+        fallbackNbId = nb.id;
+      } else {
+        fallbackNbId = notebooks[0].id;
+      }
+    }
+
+    const existingNoteIds = new Set(notes.map((n) => n.id));
+    const added = [];
+    let skipped = 0;
+
+    for (const raw of incomingNotes) {
+      if (!raw || typeof raw !== 'object') continue;
+
+      const id = (typeof raw.id === 'string' && raw.id) ? raw.id : genId();
+      if (existingNoteIds.has(id)) { skipped++; continue; }
+      existingNoteIds.add(id);
+
+      const oldNbId = raw.notebookId;
+      const newNbId = nbIdMap.get(oldNbId) || fallbackNbId;
+
+      const note = {
+        id,
+        notebookId: newNbId,
+        parentId: raw.parentId || null,
+        order: Number(raw.order) || 0,
+        title: String(raw.title ?? ''),
+        content: String(raw.content ?? ''),
+        tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+        createdAt: Number(raw.createdAt) || Date.now(),
+        updatedAt: Number(raw.updatedAt) || Date.now(),
+      };
+      if (raw.deletedAt) note.deletedAt = Number(raw.deletedAt);
+      notes.push(note);
+      added.push(note);
+    }
+
+    const addedIds = new Set(added.map((n) => n.id));
+    added.forEach((n) => {
+      if (n.parentId && !addedIds.has(n.parentId) && !existingNoteIds.has(n.parentId)) {
+        n.parentId = null;
+      }
+    });
+
+    for (const nb of notebooks) await DB.putNotebook(nb);
+    if (added.length) await DB.bulkPutNotes(added);
+
+    renderNotebookSelect();
+    renderList();
+    if (currentView === 'trash') renderTrash();
+
+    showToast(
+      `导入完成：新增 ${added.length} 条笔记` +
+      (skipped ? `，跳过 ${skipped} 条重复` : '')
+    );
+  } catch (err) {
+    showToast('导入失败：' + err.message);
+  }
+}
+
+/* =========================================================
+   富文本格式工具栏
+   ========================================================= */
+let savedRange = null;
+
+function showFmtToolbar(x, y) {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0 && els.contentInput.contains(sel.anchorNode)) {
+    savedRange = sel.getRangeAt(0).cloneRange();
+  }
+
+  const tb = els.fmtToolbar;
+  tb.style.left = '0px';
+  tb.style.top = '0px';
+  tb.hidden = false;
+
+  const rect = tb.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 8;
+  const maxY = window.innerHeight - rect.height - 8;
+  tb.style.left = Math.max(8, Math.min(x, maxX)) + 'px';
+  tb.style.top = Math.max(8, Math.min(y, maxY)) + 'px';
+}
+
+function hideFmtToolbar() {
+  els.fmtToolbar.hidden = true;
+}
+
+function restoreSelection() {
+  if (!savedRange) return;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(savedRange);
+}
+
+function execFmt(cmd, value) {
+  els.contentInput.focus();
+  restoreSelection();
+  try {
+    document.execCommand(cmd, false, value);
+  } catch (e) {
+    console.warn('execCommand 失败', cmd, e);
+  }
+  scheduleSave();
+}
+
+function insertLink() {
+  const url = prompt('链接地址：', 'https://');
+  if (!url) return;
+  execFmt('createLink', url.trim());
+}
+
+function insertTable() {
+  const rowsStr = prompt('表格行数：', '3');
+  if (rowsStr === null) return;
+  const colsStr = prompt('表格列数：', '3');
+  if (colsStr === null) return;
+
+  const r = Math.max(1, Math.min(20, parseInt(rowsStr, 10) || 3));
+  const c = Math.max(1, Math.min(10, parseInt(colsStr, 10) || 3));
+
+  let html = '<table><tbody>';
+  for (let i = 0; i < r; i++) {
+    html += '<tr>';
+    for (let j = 0; j < c; j++) {
+      html += i === 0 ? '<th>表头</th>' : '<td>内容</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table><p><br></p>';
+
+  execFmt('insertHTML', html);
+}
+
+els.fmtToolbar.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  const btn = e.target.closest('button');
+  if (!btn) return;
+
+  const { cmd, block, action } = btn.dataset;
+
+  if (cmd) execFmt(cmd);
+  else if (block) execFmt('formatBlock', `<${block}>`);
+  else if (action === 'link') insertLink();
+  else if (action === 'table') insertTable();
+});
+
+els.contentInput.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  showFmtToolbar(e.clientX, e.clientY);
+});
+
+document.addEventListener('mousedown', (e) => {
+  if (els.fmtToolbar.hidden) return;
+  if (els.fmtToolbar.contains(e.target)) return;
+  hideFmtToolbar();
+});
+
+els.contentInput.addEventListener('click', (e) => {
+  const a = e.target.closest('a');
+  if (a && a.href) {
+    e.preventDefault();
+    window.open(a.href, '_blank', 'noopener,noreferrer');
+  }
+});
+
+/* =========================================================
+   AI
+   ========================================================= */
+function loadSettings() {
+  els.apiBase.value = localStorage.getItem('ai_base') || 'https://api.deepseek.com/v1';
+  els.apiModel.value = localStorage.getItem('ai_model') || 'deepseek-chat';
+  els.apiKey.value = localStorage.getItem('ai_key') || '';
+}
+
+function saveSettings() {
+  localStorage.setItem('ai_base', els.apiBase.value.trim());
+  localStorage.setItem('ai_model', els.apiModel.value.trim());
+  localStorage.setItem('ai_key', els.apiKey.value.trim());
+}
+
+async function callAI(messages) {
+  const base = (els.apiBase.value.trim() || 'https://api.deepseek.com/v1').replace(/\/+$/, '');
+  const key = els.apiKey.value.trim();
+  const model = els.apiModel.value.trim() || 'deepseek-chat';
+
+  if (!key) throw new Error('请先在「更多」面板里填入 API Key');
+
+  const res = await fetch(base + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + key,
+    },
+    body: JSON.stringify({ model, messages, temperature: 0.3 }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`请求失败（${res.status}）${text.slice(0, 160)}`);
+  }
+
+  const data = await res.json();
+  return (data && data.choices && data.choices[0] &&
+          data.choices[0].message && data.choices[0].message.content || '').trim();
+}
+
+function setAILoading(which) {
+  const busy = !!which;
+  els.aiSummaryBtn.disabled = busy;
+  els.aiTagsBtn.disabled = busy;
+  els.aiSummaryBtn.textContent = which === 'summary' ? '总结中…' : 'AI 总结';
+  els.aiTagsBtn.textContent = which === 'tags' ? '生成中…' : 'AI 生成标签';
+}
+
+function showAIResult(title, body, mode) {
+  els.aiResultTitle.textContent = title;
+  els.aiResultBody.textContent = body;
+  els.aiInsertBtn.hidden = mode !== 'append';
+  aiResultMode = mode;
+  els.aiResult.hidden = false;
+}
+
+function hideAIResult() {
+  els.aiResult.hidden = true;
+  aiResultMode = null;
+}
+
+function insertAIResult() {
+  if (aiResultMode !== 'append') return;
+  const text = els.aiResultBody.textContent.trim();
+  if (!text) return;
+
+  const html = '<p>--- AI 总结 ---</p><pre>' + escapeHtml(text) + '</pre>';
+
+  els.contentInput.focus();
+  const sel = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(els.contentInput);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  document.execCommand('insertHTML', false, html);
+  scheduleSave();
+  hideAIResult();
+}
+
+function getEditorPlainText() {
+  return (els.contentInput.innerText || els.contentInput.textContent || '').trim();
+}
+
+async function runAISummary() {
+  const content = getEditorPlainText();
+  if (!content) { showToast('笔记还是空的，先写点内容'); return; }
+
+  setAILoading('summary');
+  hideAIResult();
+
+  try {
+    const result = await callAI([
+      { role: 'system', content: '你是一个笔记助手。请用中文简洁总结用户的笔记，输出 3-5 条要点，每条以短横线开头，不要寒暄。' },
+      { role: 'user', content },
+    ]);
+    showAIResult('AI 总结', result || '（模型返回了空内容）', 'append');
+  } catch (err) {
+    showAIResult('出错了', err.message, null);
+  } finally {
+    setAILoading(null);
+  }
+}
+
+async function runAITags() {
+  const content = getEditorPlainText();
+  if (!content) { showToast('笔记还是空的，先写点内容'); return; }
+
+  setAILoading('tags');
+
+  try {
+    const result = await callAI([
+      { role: 'system', content: '阅读用户的笔记，给出 3-5 个中文标签。只输出标签本身，用英文逗号分隔，不要编号、不要解释、不要句号。' },
+      { role: 'user', content },
+    ]);
+
+    const fresh = result.split(/[,，\n]/)
+      .map((s) => s.trim().replace(/^#/, ''))
+      .filter(Boolean);
+
+    if (!fresh.length) throw new Error('模型没有返回可用标签');
+
+    const merged = [...new Set([...parseTags(els.tagsInput.value), ...fresh])];
+    els.tagsInput.value = merged.join(', ');
+    scheduleSave();
+
+    showToast('已添加标签：' + fresh.join('、'));
+  } catch (err) {
+    showToast('生成标签失败：' + err.message);
+  } finally {
+    setAILoading(null);
+  }
+}
+
+/* =========================================================
+   事件绑定
+   ========================================================= */
+els.newBtn.addEventListener('click', createNote);
+
+// 笔记本菜单
+els.notebookMenuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  els.fileDropdown.hidden = true;
+  els.notebookDropdown.hidden = !els.notebookDropdown.hidden;
+});
+
+els.notebookDropdown.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn || btn.disabled) return;
+  const action = btn.dataset.action;
+  els.notebookDropdown.hidden = true;
+
+  if (action === 'new') await createNotebook();
+  else if (action === 'rename') await renameNotebook();
+  else if (action === 'delete') await deleteNotebook();
+});
+
+els.notebookSelect.addEventListener('change', () => {
+  switchNotebook(els.notebookSelect.value);
+});
+
+// 文件菜单
+els.fileBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  els.notebookDropdown.hidden = true;
+  els.fileDropdown.hidden = !els.fileDropdown.hidden;
+});
+
+els.fileDropdown.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  els.fileDropdown.hidden = true;
+
+  if (action === 'export') exportJSON();
+  else if (action === 'import') els.importFile.click();
+  else if (action === 'clear') await clearAllData();
+});
+
+// 点击页面其它地方关闭菜单
+document.addEventListener('click', (e) => {
+  if (!els.notebookDropdown.hidden && !els.notebookDropdown.contains(e.target)) {
+    els.notebookDropdown.hidden = true;
+  }
+  if (!els.fileDropdown.hidden && !els.fileDropdown.contains(e.target)) {
+    els.fileDropdown.hidden = true;
+  }
+});
+
+// 回收站按钮：切换视图
+els.trashBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  els.fileDropdown.hidden = true;
+  els.notebookDropdown.hidden = true;
+
+  if (currentView === 'trash') {
+    showNotesView();
+  } else {
+    showTrashView();
+  }
+});
+
+// 回收站：右键清空
+els.trashBtn.addEventListener('contextmenu', async (e) => {
+  e.preventDefault();
+  await emptyTrash();
+});
+
+// 回收站：拖入删除
+els.trashBtn.addEventListener('dragover', (e) => {
+  if (!dragState) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  els.trashBtn.classList.add('drag-over');
+});
+
+els.trashBtn.addEventListener('dragleave', () => {
+  els.trashBtn.classList.remove('drag-over');
+});
+
+els.trashBtn.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  els.trashBtn.classList.remove('drag-over');
+  if (!dragState) return;
+  const id = dragState.id;
+  dragState = null;
+  dropTarget = null;
+  clearDropIndicators();
+  await softDeleteNote(id);
+});
+
+els.emptyTrashBtn.addEventListener('click', emptyTrash);
+
+els.importFile.addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const name = (file.name || '').toLowerCase();
+
+  try {
+    if (name.endsWith('.md') || name.endsWith('.markdown')) {
+      const text = await file.text();
+      await importMarkdownFile(text, file.name);
+    } else {
+      await importJSON(file);
+    }
+  } catch (err) {
+    console.error('导入失败', err);
+    showToast('导入失败：' + err.message);
+  }
+
+  e.target.value = '';
+});
+
+els.searchInput.addEventListener('input', renderList);
+
+els.titleInput.addEventListener('input', scheduleSave);
+els.contentInput.addEventListener('input', scheduleSave);
+els.tagsInput.addEventListener('input', scheduleSave);
+
+els.titleInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    els.contentInput.focus();
+  }
+});
+
+els.moreBtn.addEventListener('click', () => {
+  const willShow = els.morePanel.hidden;
+  els.morePanel.hidden = !willShow;
+  els.moreBtn.textContent = willShow ? '收起 ▴' : '更多 ▾';
+});
+
+els.deleteBtn.addEventListener('click', deleteNote);
+
+els.aiSummaryBtn.addEventListener('click', runAISummary);
+els.aiTagsBtn.addEventListener('click', runAITags);
+els.aiInsertBtn.addEventListener('click', insertAIResult);
+els.aiDiscardBtn.addEventListener('click', hideAIResult);
+
+[els.apiBase, els.apiModel, els.apiKey].forEach((el) => {
+  el.addEventListener('input', saveSettings);
+});
+
+document.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (!mod) return;
+
+  if (e.key === 's') {
+    e.preventDefault();
+    flushSave();
+    showToast('已保存');
+  }
+
+  if (e.key === 'n') {
+    e.preventDefault();
+    createNote();
+  }
+});
+
+window.addEventListener('beforeunload', flushSave);
+
+/* =========================================================
+   启动
+   ========================================================= */
+async function init() {
+  loadSettings();
+
+  try {
+    notebooks = await DB.allNotebooks();
+    notes = await DB.allNotes();
+  } catch (err) {
+    console.error('读取本地数据失败', err);
+    notebooks = [];
+    notes = [];
+  }
+
+  if (!notebooks.length) {
+    const nb = {
+      id: genNbId(),
+      name: '我的笔记',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    notebooks.push(nb);
+    await DB.putNotebook(nb);
+  }
+
+  const nbIds = new Set(notebooks.map((n) => n.id));
+  const fallbackNbId = notebooks[0].id;
+  let needsSave = false;
+  notes.forEach((n) => {
+    if (!n.notebookId || !nbIds.has(n.notebookId)) {
+      n.notebookId = fallbackNbId;
+      needsSave = true;
+    }
+    if (n.parentId === undefined) { n.parentId = null; needsSave = true; }
+    if (n.order === undefined) { n.order = 0; needsSave = true; }
+  });
+  if (needsSave) await DB.bulkPutNotes(notes);
+
+  const savedNb = localStorage.getItem('current_notebook');
+  currentNotebookId = (savedNb && nbIds.has(savedNb)) ? savedNb : notebooks[0].id;
+
+  renderNotebookSelect();
+  renderList();
+
+  const first = notes
+    .filter((n) => n.notebookId === currentNotebookId && !n.parentId && !n.deletedAt)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0];
+
+  if (first) {
+    selectNote(first.id);
+  } else {
+    showEmpty();
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>
